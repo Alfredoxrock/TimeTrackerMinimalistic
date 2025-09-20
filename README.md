@@ -14,17 +14,6 @@ A sleek and modern **time tracking app** built with **React Native** and **Expo*
 - 🌙 **Light and Dark Mode** support for a comfortable experience in any environment.
 - 📱 Fully responsive design for Android and iOS.
 
----
-
-## Screenshots
-
-![Home Screen](./screenshots/home.png)  
-![Task Timer Running](./screenshots/timer.png)  
-
-*(Replace these images with your own screenshots in the `screenshots/` folder)*
-
----
-
 ## Installation
 
 ### 1. Clone the repository
