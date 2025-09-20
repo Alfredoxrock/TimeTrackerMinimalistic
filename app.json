@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "TimeTrackerApp",
-    "slug": "TimeTrackerApp",
+    "name": "TimeTrackerMinimalistic",
+    "slug": "TimeTrackerMinimalistic",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/clocks.png",
     "scheme": "timetrackerapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.alfredoxrock.TimeTrackerMinimalistic"
     },
     "web": {
       "output": "static",
@@ -43,6 +44,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "818463d3-2ff3-4c05-8f58-34979a1e22e9"
+      }
     }
   }
 }
