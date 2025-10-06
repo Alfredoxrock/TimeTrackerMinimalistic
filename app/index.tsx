@@ -5,14 +5,16 @@ import { Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 type Task = {
   id: string;
   name: string;
-  time: number; // in seconds
+  accumulated: number; // seconds already counted before last start
+  startTimestamp?: number; // timestamp when started, undefined if paused
   running: boolean;
 };
 
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskName, setTaskName] = useState<string>('');
-  const timerRefs = useRef<Map<string, NodeJS.Timer>>(new Map());
+  const [now, setNow] = useState(Date.now());
+  const timerRef = useRef<NodeJS.Timer | null>(null);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -20,12 +22,14 @@ export default function App() {
       if (saved) {
         const parsed: Task[] = JSON.parse(saved);
         setTasks(parsed);
-        parsed.forEach(task => {
-          if (task.running) resumeTask(task.id, true);
-        });
       }
     };
     loadTasks();
+    // Start a global interval to update 'now' every second
+    timerRef.current = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -37,18 +41,15 @@ export default function App() {
       Alert.alert('Error', 'Please enter a task name.');
       return;
     }
-
     const id = Date.now().toString();
-    const newTask: Task = { id, name, time: 0, running: true };
+    const newTask: Task = {
+      id,
+      name,
+      accumulated: 0,
+      startTimestamp: Date.now(),
+      running: true,
+    };
     setTasks(prev => [...prev, newTask]);
-
-    const interval = setInterval(() => {
-      setTasks(prev =>
-        prev.map(task => (task.id === id ? { ...task, time: task.time + 1 } : task))
-      );
-    }, 1000);
-
-    timerRefs.current.set(id, interval);
     setTaskName('');
   };
 
@@ -59,33 +60,39 @@ export default function App() {
   };
 
   const pauseTask = (id: string) => {
-    const interval = timerRefs.current.get(id);
-    if (interval) clearInterval(interval);
-    timerRefs.current.delete(id);
-
     setTasks(prev =>
-      prev.map(t => (t.id === id ? { ...t, running: false } : t))
+      prev.map(t => {
+        if (t.id === id && t.running && t.startTimestamp) {
+          const elapsed = Math.floor((Date.now() - t.startTimestamp) / 1000);
+          return {
+            ...t,
+            accumulated: t.accumulated + elapsed,
+            startTimestamp: undefined,
+            running: false,
+          };
+        }
+        return t;
+      })
     );
   };
 
   const resumeTask = (id: string, fromStorage = false) => {
-    const interval = setInterval(() => {
-      setTasks(prev =>
-        prev.map(t => (t.id === id ? { ...t, time: t.time + 1 } : t))
-      );
-    }, 1000);
-
-    timerRefs.current.set(id, interval);
-
     setTasks(prev =>
-      prev.map(t => (t.id === id ? { ...t, running: true } : t))
+      prev.map(t =>
+        t.id === id
+          ? {
+            ...t,
+            startTimestamp: Date.now(),
+            running: true,
+          }
+          : t
+      )
     );
   };
 
   const resetTask = (id: string) => {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
-
     Alert.alert(
       'Reset Task',
       `Are you sure you want to reset "${task.name}"?`,
@@ -98,12 +105,17 @@ export default function App() {
           text: 'Reset',
           style: 'destructive',
           onPress: () => {
-            const interval = timerRefs.current.get(id);
-            if (interval) clearInterval(interval);
-            timerRefs.current.delete(id);
-
             setTasks(prev =>
-              prev.map(t => (t.id === id ? { ...t, time: 0, running: false } : t))
+              prev.map(t =>
+                t.id === id
+                  ? {
+                    ...t,
+                    accumulated: 0,
+                    startTimestamp: undefined,
+                    running: false,
+                  }
+                  : t
+              )
             );
           },
         },
@@ -114,7 +126,6 @@ export default function App() {
   const removeTask = (id: string) => {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
-
     Alert.alert(
       'Remove Task',
       `Are you sure you want to remove "${task.name}"?`,
@@ -127,10 +138,6 @@ export default function App() {
           text: 'Remove',
           style: 'destructive',
           onPress: () => {
-            const interval = timerRefs.current.get(id);
-            if (interval) clearInterval(interval);
-            timerRefs.current.delete(id);
-
             setTasks(prev => prev.filter(t => t.id !== id));
           },
         },
@@ -150,7 +157,13 @@ export default function App() {
     <View style={styles.taskCard}>
       <View style={{ flex: 1, marginBottom: 10 }}>
         <Text style={styles.taskName}>{item.name}</Text>
-        <Text style={styles.taskTime}>{formatTime(item.time)}</Text>
+        <Text style={styles.taskTime}>{
+          formatTime(
+            item.running && item.startTimestamp
+              ? item.accumulated + Math.floor((now - item.startTimestamp) / 1000)
+              : item.accumulated
+          )
+        }</Text>
       </View>
 
       <View style={styles.buttonRow}>
