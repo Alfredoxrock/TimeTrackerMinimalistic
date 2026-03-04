@@ -1,0 +1,12 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Expo",
+			"type": "shell",
+			"command": "$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); npx expo start --web",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
