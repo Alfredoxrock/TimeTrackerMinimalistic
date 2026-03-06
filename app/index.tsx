@@ -7,6 +7,7 @@ import {
   AppState,
   Dimensions,
   Modal,
+  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,41 +15,42 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Rect } from "react-native-svg";
 
 const { width } = Dimensions.get("window");
 
 //  Color system 
 const C = {
-  bg:      "#0a0a0f",
+  bg: "#0a0a0f",
   surface: "#13131a",
-  rim:     "#1e1e2e",
-  text:    "#e8e4d9",
-  muted:   "#5a5870",
-  accent:  "#c8b8ff",
-  pulse:   "#ff6b6b",
+  rim: "#1e1e2e",
+  text: "#e8e4d9",
+  muted: "#5a5870",
+  accent: "#c8b8ff",
+  pulse: "#ff6b6b",
 };
 
 //  Types 
 type TaskConfig = { id: string; label: string; emoji: string; color: string };
-type TaskState  = { accumulated: number; startTimestamp?: number; running: boolean };
-type AllTasks   = Record<string, TaskState>;
+type TaskState = { accumulated: number; startTimestamp?: number; running: boolean };
+type AllTasks = Record<string, TaskState>;
+type HistoryEntry = { id: string; start: number; end: number };
 
 //  Default tasks 
 const DEFAULT_TASKS: TaskConfig[] = [
-  { id: "reading",    label: "Reading",    emoji: "\uD83D\uDCD6", color: "#7eb8f7" },
-  { id: "writing",    label: "Writing",    emoji: "\u270D\uFE0F", color: "#f7c97e" },
-  { id: "cooking",    label: "Cooking",    emoji: "\uD83C\uDF73", color: "#f7a07e" },
-  { id: "exercise",   label: "Exercise",   emoji: "\uD83C\uDFC3", color: "#7ef7b0" },
-  { id: "work",       label: "Work",       emoji: "\uD83D\uDCBB", color: "#c8b8ff" },
-  { id: "learning",   label: "Learning",   emoji: "\uD83C\uDF93", color: "#f7e97e" },
-  { id: "rest",       label: "Rest",       emoji: "\uD83D\uDECF\uFE0F", color: "#b8d4ff" },
-  { id: "social",     label: "Social",     emoji: "\uD83D\uDE42", color: "#ffb8d4" },
-  { id: "creative",   label: "Creative",   emoji: "\uD83C\uDFA8", color: "#ffcb7e" },
+  { id: "reading", label: "Reading", emoji: "\uD83D\uDCD6", color: "#5b9cf6" },
+  { id: "writing", label: "Writing", emoji: "\u270D\uFE0F", color: "#ffd93d" },
+  { id: "cooking", label: "Cooking", emoji: "\uD83C\uDF73", color: "#ff6b6b" },
+  { id: "exercise", label: "Exercise", emoji: "\uD83C\uDFC3", color: "#6bcb77" },
+  { id: "work", label: "Work", emoji: "\uD83D\uDCBB", color: "#a78bfa" },
+  { id: "learning", label: "Learning", emoji: "\uD83C\uDF93", color: "#22d3ee" },
+  { id: "rest", label: "Rest", emoji: "\uD83D\uDECF\uFE0F", color: "#94a3b8" },
+  { id: "social", label: "Social", emoji: "\uD83D\uDE42", color: "#fb923c" },
+  { id: "creative", label: "Creative", emoji: "\uD83C\uDFA8", color: "#f472b6" },
 ];
 
 const PALETTE: string[] = [
-  "#7eb8f7","#f7c97e","#f7a07e","#7ef7b0","#c8b8ff","#f7e97e","#b8d4ff","#ffb8d4","#ffcb7e",
+  "#5b9cf6", "#ffd93d", "#ff6b6b", "#6bcb77", "#a78bfa", "#22d3ee", "#94a3b8", "#fb923c", "#f472b6",
 ];
 
 const EMOJI_LIST = [
@@ -59,8 +61,11 @@ const EMOJI_LIST = [
   "\uD83D\uDCAA", "\u2764\uFE0F", "\uD83C\uDF0D", "\uD83C\uDFB8",
 ];
 
-const DAYS   = ["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"];
-const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+const DAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+// ─── Feature flags ───────────────────────────────────────────────────────────
+const PREMIUM = false;
 
 // ─── Clock ring helpers ──────────────────────────────────────────────────────
 const ring = (r: number) => ({ r, circ: 2 * Math.PI * r });
@@ -68,16 +73,48 @@ const H_RING = ring(106);
 const M_RING = ring(87);
 const S_RING = ring(68);
 const arc = (circ: number, p: number) => circ * (1 - Math.max(0, Math.min(1, p)));
+// arc segment: from/to are 0-1 fractions of full circle, result is [dashArray, dashOffset]
+const arcSeg = (circ: number, from: number, to: number): [string, number] => [
+  `${Math.max(0, to - from) * circ} ${circ}`,
+  circ * (1 - Math.max(0, from)),
+];
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+const dateKey = (ts: number): string => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const heatColor = (seconds: number): string => {
+  if (seconds <= 0) return C.rim;
+  if (seconds < 1800) return "#2d2050";
+  if (seconds < 7200) return "#5b3fa0";
+  if (seconds < 14400) return "#8b6fd4";
+  return C.accent;
+};
+const hexToRgba = (hex: string, a: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+const taskHeatColor = (seconds: number, color: string): string => {
+  if (seconds <= 0) return C.rim;
+  if (seconds < 1800) return hexToRgba(color, 0.25);
+  if (seconds < 7200) return hexToRgba(color, 0.5);
+  if (seconds < 14400) return hexToRgba(color, 0.75);
+  return color;
+};
+const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
+const MON_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // ─── Time formatting ─────────────────────────────────────────────────────────
 const fmtTime = (s: number): string => {
-  if (s < 60)   return `${s}s`;
+  if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  if (h < 10)   return `${h}h ${m}m`;
+  if (h < 10) return `${h}h ${m}m`;
   return `${h}h`;
 };
-const fmt      = (n: number) => String(n).padStart(2, "0");
+const fmt = (n: number) => String(n).padStart(2, "0");
 const fmtTotal = (s: number): string => {
   if (s <= 0) return "";
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
@@ -86,33 +123,94 @@ const fmtTotal = (s: number): string => {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [dmLoaded]      = useDMMono({ DMMono_400Regular, DMMono_500Medium });
-  const [pfLoaded]      = usePlayfair({ PlayfairDisplay_700Bold });
+  const [dmLoaded] = useDMMono({ DMMono_400Regular, DMMono_500Medium });
+  const [pfLoaded] = usePlayfair({ PlayfairDisplay_700Bold });
 
   const [taskConfigs, setTaskConfigs] = useState<TaskConfig[]>(DEFAULT_TASKS);
   const [tasks, setTasks] = useState<AllTasks>(() =>
     Object.fromEntries(DEFAULT_TASKS.map(t => [t.id, { accumulated: 0, running: false }]))
   );
-  const [now, setNow]   = useState(Date.now());
-  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [dayHistory, setDayHistory] = useState<HistoryEntry[]>([]);
+  const [dailyTotals, setDailyTotals] = useState<Record<string, number>>({});
+  // per-task per-day seconds: taskId -> dateKey -> seconds
+  const [taskDailyTotals, setTaskDailyTotals] = useState<Record<string, Record<string, number>>>({});
+  // which task circle is selected for heatmap filtering (null = all combined)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // per-day histories for the week view: storage key -> HistoryEntry[]
+  const [weekHistories, setWeekHistories] = useState<Record<string, HistoryEntry[]>>({});
+  const [viewIndex, setViewIndex] = useState(0); // 0=clock 1=week 2=month 3=year
+  const viewIndexRef = useRef(0);
+  const setView = (n: number) => { viewIndexRef.current = n; setViewIndex(n); };
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderRelease: (_, g) => {
+        const cur = viewIndexRef.current;
+        if (g.dx < -40 && cur < 3) { viewIndexRef.current = cur + 1; setViewIndex(cur + 1); }
+        else if (g.dx > 40 && cur > 0) { viewIndexRef.current = cur - 1; setViewIndex(cur - 1); }
+      },
+    })
+  ).current;
 
   // Edit modal state
-  const [editId, setEditId]               = useState<string | null>(null);
-  const [editLabel, setEditLabel]         = useState("");
-  const [editEmoji, setEditEmoji]         = useState(EMOJI_LIST[0]);
-  const [editColorIdx, setEditColorIdx]   = useState(0);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editEmoji, setEditEmoji] = useState(EMOJI_LIST[0]);
+  const [editColorIdx, setEditColorIdx] = useState(0);
+
+  // Title edit state
+  const [titleValue, setTitleValue] = useState("Day Circles");
+  const [titleEditing, setTitleEditing] = useState(false);
+  const titleInputRef = useRef<TextInput | null>(null);
+
+  const commitTitle = (val: string) => {
+    const trimmed = val.trim() || "Day Circles";
+    setTitleValue(trimmed);
+    setTitleEditing(false);
+    AsyncStorage.setItem("mainTitle_v1", trimmed);
+  };
 
   useEffect(() => {
     Promise.all([
       AsyncStorage.getItem("tasks_v5"),
-      AsyncStorage.getItem("taskConfigs_v5"),
-    ]).then(([st, sc]) => {
+      AsyncStorage.getItem("taskConfigs_v6"),
+      AsyncStorage.getItem("mainTitle_v1"),
+      AsyncStorage.getItem(`dayHistory_v1_${todayStr()}`),
+      AsyncStorage.getItem("dailyTotals_v1"),
+      AsyncStorage.getItem("taskDailyTotals_v1"),
+    ]).then(([st, sc, title, hist, dt, tdt]) => {
       if (sc) setTaskConfigs(JSON.parse(sc));
       if (st) setTasks(JSON.parse(st));
+      if (title) setTitleValue(title);
+      if (hist) setDayHistory(JSON.parse(hist));
+      if (dt) setDailyTotals(JSON.parse(dt));
+      if (tdt) setTaskDailyTotals(JSON.parse(tdt));
     });
+    // load last 7 days of saved dayHistory into weekHistories using YYYY-MM-DD keys
+    (async () => {
+      const map: Record<string, HistoryEntry[]> = {};
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        // storage uses unpadded todayStr() format; memory key uses padded dateKey() format
+        const storageKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        const memKey = dateKey(d.getTime());
+        const raw = await AsyncStorage.getItem(`dayHistory_v1_${storageKey}`);
+        if (raw) {
+          try { map[memKey] = JSON.parse(raw); } catch { /* ignore */ }
+        }
+      }
+      setWeekHistories(map);
+    })();
     timerRef.current = setInterval(() => setNow(Date.now()), 1000);
     const sub = AppState.addEventListener("change", next => {
-      if (next === "active") setNow(Date.now());
+      if (next === "active") {
+        // Refresh clock when returning to app — elapsed recalculates from persisted startTimestamp
+        setNow(Date.now());
+      }
     });
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -121,31 +219,74 @@ export default function App() {
   }, []);
 
   useEffect(() => { AsyncStorage.setItem("tasks_v5", JSON.stringify(tasks)); }, [tasks]);
-  useEffect(() => { AsyncStorage.setItem("taskConfigs_v5", JSON.stringify(taskConfigs)); }, [taskConfigs]);
+  useEffect(() => { AsyncStorage.setItem("taskConfigs_v6", JSON.stringify(taskConfigs)); }, [taskConfigs]);
+  useEffect(() => {
+    if (dayHistory.length > 0)
+      AsyncStorage.setItem(`dayHistory_v1_${todayStr()}`, JSON.stringify(dayHistory));
+    // keep weekHistories entry for today in sync
+    setWeekHistories(prev => ({ ...prev, [dateKey(Date.now())]: dayHistory }));
+  }, [dayHistory]);
+  useEffect(() => {
+    if (Object.keys(dailyTotals).length > 0)
+      AsyncStorage.setItem("dailyTotals_v1", JSON.stringify(dailyTotals));
+  }, [dailyTotals]);
+  useEffect(() => {
+    if (Object.keys(taskDailyTotals).length > 0)
+      AsyncStorage.setItem("taskDailyTotals_v1", JSON.stringify(taskDailyTotals));
+  }, [taskDailyTotals]);
 
   const getSeconds = (task?: TaskState): number => {
     if (!task) return 0;
     return task.running && task.startTimestamp
-      ? task.accumulated + Math.floor((now - task.startTimestamp) / 1000)
+      ? task.accumulated + Math.max(0, Math.floor((now - task.startTimestamp) / 1000))
       : task.accumulated;
   };
 
   const toggleTask = (id: string) => {
-    setTasks(prev => {
-      const task = prev[id] ?? { accumulated: 0, running: false };
-      if (task.running) {
-        const elapsed = task.startTimestamp ? Math.floor((Date.now() - task.startTimestamp) / 1000) : 0;
-        return { ...prev, [id]: { accumulated: task.accumulated + elapsed, running: false } };
-      }
+    const ts = Date.now();
+    const task = tasks[id] ?? { accumulated: 0, running: false };
+    const newEntries: HistoryEntry[] = [];
+    if (task.running) {
+      if (task.startTimestamp) newEntries.push({ id, start: task.startTimestamp, end: ts });
+      setTasks(prev => ({
+        ...prev,
+        [id]: { accumulated: task.accumulated + Math.max(0, Math.floor((ts - (task.startTimestamp ?? ts)) / 1000)), running: false },
+      }));
+    } else {
       const updated: AllTasks = {};
-      for (const [k, v] of Object.entries(prev)) {
-        updated[k] = v.running && v.startTimestamp
-          ? { accumulated: v.accumulated + Math.floor((Date.now() - v.startTimestamp) / 1000), running: false }
-          : v;
+      for (const [k, v] of Object.entries(tasks)) {
+        if (v.running && v.startTimestamp) {
+          newEntries.push({ id: k, start: v.startTimestamp, end: ts });
+          updated[k] = { accumulated: v.accumulated + Math.max(0, Math.floor((ts - v.startTimestamp) / 1000)), running: false };
+        } else {
+          updated[k] = v;
+        }
       }
-      updated[id] = { accumulated: (updated[id] ?? { accumulated: 0 }).accumulated, startTimestamp: Date.now(), running: true };
-      return updated;
-    });
+      updated[id] = { accumulated: (updated[id] ?? { accumulated: 0 }).accumulated, startTimestamp: ts, running: true };
+      setTasks(() => updated);
+    }
+    if (newEntries.length) {
+      setDayHistory(h => [...h, ...newEntries]);
+      setDailyTotals(prev => {
+        const updated = { ...prev };
+        for (const { start, end } of newEntries) {
+          const key = dateKey(start);
+          updated[key] = (updated[key] || 0) + Math.max(0, Math.floor((end - start) / 1000));
+        }
+        return updated;
+      });
+      setTaskDailyTotals(prev => {
+        const updated: Record<string, Record<string, number>> = {};
+        for (const k of Object.keys(prev)) updated[k] = { ...prev[k] };
+        for (const { id: eid, start, end } of newEntries) {
+          const key = dateKey(start);
+          if (!updated[eid]) updated[eid] = {};
+          updated[eid][key] = (updated[eid][key] || 0) + Math.max(0, Math.floor((end - start) / 1000));
+        }
+        return updated;
+      });
+    }
+    setNow(ts);
   };
 
   const openEdit = (id: string) => {
@@ -170,29 +311,44 @@ export default function App() {
     if (!editId) return;
     Alert.alert("Reset Timer", "Reset all tracked time for this task?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Reset", style: "destructive", onPress: () => {
-        setTasks(prev => ({ ...prev, [editId]: { accumulated: 0, running: false } }));
-        setEditId(null);
-      }},
+      {
+        text: "Reset", style: "destructive", onPress: () => {
+          setTasks(prev => ({ ...prev, [editId]: { accumulated: 0, running: false } }));
+          setEditId(null);
+        }
+      },
     ]);
   };
 
   // Derived clock values
-  const nowDate  = new Date(now);
-  const clockH   = nowDate.getHours() % 12 + nowDate.getMinutes() / 60;
-  const clockM   = nowDate.getMinutes() + nowDate.getSeconds() / 60;
-  const clockS   = nowDate.getSeconds();
-  const dateStr  = `${MONTHS[nowDate.getMonth()]} ${nowDate.getDate()}, ${nowDate.getFullYear()}`;
-  const dayStr   = DAYS[nowDate.getDay()];
-  const timeStr  = `${fmt(nowDate.getHours())}:${fmt(nowDate.getMinutes())}:${fmt(nowDate.getSeconds())}`;
+  const nowDate = new Date(now);
+  const clockH = nowDate.getHours() % 12 + nowDate.getMinutes() / 60;
+  const clockM = nowDate.getMinutes() + nowDate.getSeconds() / 60;
+  const clockS = nowDate.getSeconds();
+  const dateStr = `${MONTHS[nowDate.getMonth()]} ${nowDate.getDate()}, ${nowDate.getFullYear()}`;
+  const dayStr = DAYS[nowDate.getDay()];
+  const timeStr = `${fmt(nowDate.getHours())}:${fmt(nowDate.getMinutes())}:${fmt(nowDate.getSeconds())}`;
   const totalSec = taskConfigs.reduce((s, t) => s + getSeconds(tasks[t.id]), 0);
   const activeCfg = taskConfigs.find(t => tasks[t.id]?.running) ?? null;
 
+  // 24h color map: combine saved history + live running segment
+  const dayStartMs = (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+  const DAY_MS = 86400000;
+  const liveEntry: HistoryEntry[] = activeCfg && tasks[activeCfg.id]?.startTimestamp
+    ? [{ id: activeCfg.id, start: tasks[activeCfg.id].startTimestamp!, end: now }]
+    : [];
+  const allSegments = [...dayHistory, ...liveEntry];
+
+  // Active task elapsed arcs (M + S rings)
+  const activeElapsed = activeCfg ? getSeconds(tasks[activeCfg.id]) : 0;
+  const taskArcM = (Math.floor((activeElapsed % 3600) / 60)) / 60 + (activeElapsed % 60) / 3600;
+  const taskArcS = (activeElapsed % 60) / 60;
+
   // Grid sizing — 3 per row
-  const COLS  = 3;
+  const COLS = 3;
   const H_PAD = 20;
-  const GAP   = 10;
-  const CS    = Math.floor((width - H_PAD * 2 - GAP * (COLS - 1)) / COLS);
+  const GAP = 10;
+  const CS = Math.floor((width - H_PAD * 2 - GAP * (COLS - 1)) / COLS);
 
   if (!dmLoaded || !pfLoaded) return <View style={styles.root} />;
 
@@ -210,44 +366,270 @@ export default function App() {
       )}
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.mainTitle}>Day Circles</Text>
+        {titleEditing ? (
+          <TextInput
+            ref={titleInputRef}
+            style={styles.mainTitleInput}
+            value={titleValue}
+            onChangeText={setTitleValue}
+            onBlur={() => commitTitle(titleValue)}
+            onSubmitEditing={() => commitTitle(titleValue)}
+            returnKeyType="done"
+            maxLength={24}
+            autoFocus
+            selectTextOnFocus
+          />
+        ) : (
+          <TouchableOpacity
+            onLongPress={() => {
+              setTitleEditing(true);
+              setTimeout(() => titleInputRef.current?.focus(), 50);
+            }}
+            delayLongPress={400}
+            activeOpacity={1}
+          >
+            <Text style={styles.mainTitle}>{titleValue}</Text>
+          </TouchableOpacity>
+        )}
 
-        {/* Triple-ring clock */}
-        <View style={styles.clockWrapper}>
-          <Svg width={250} height={250} viewBox="0 0 250 250">
-            {/* Track rings */}
-            <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={11} fill="none" />
-            <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={7}  fill="none" />
-            <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={4}  fill="none" />
-            {/* Progress rings */}
-            <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={1}    strokeWidth={11} fill="none"
-              strokeDasharray={`${H_RING.circ}`} strokeDashoffset={arc(H_RING.circ, clockH / 12)}
-              strokeLinecap="round" transform="rotate(-90,125,125)" />
-            <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.55} strokeWidth={7}  fill="none"
-              strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, clockM / 60)}
-              strokeLinecap="round" transform="rotate(-90,125,125)" />
-            <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.3}  strokeWidth={4}  fill="none"
-              strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, clockS / 60)}
-              strokeLinecap="round" transform="rotate(-90,125,125)" />
-          </Svg>
-          <View style={styles.clockFace}>
-            <Text style={styles.clockDigits}>{timeStr}</Text>
-            {activeCfg && (
-              <View style={styles.activeTag}>
-                <Text style={styles.activeTagEmoji}>{activeCfg.emoji}</Text>
-                <Text style={[styles.activeTagLabel, { color: activeCfg.color }]}>{activeCfg.label}</Text>
-                <View style={[styles.pulseDot, { backgroundColor: C.pulse }]} />
+        {/* Swipeable: 0=clock  1=week  2=month  3=year (views 1-3 require PREMIUM) */}
+        <View {...(PREMIUM ? panResponder.panHandlers : {})} style={[styles.clockWrapper, PREMIUM && viewIndex > 0 && { height: "auto" as any, width: width - 32 }]}>
+
+          {/* ── VIEW 0: triple-ring clock ── */}
+          {viewIndex === 0 && (<>
+            <Svg width={250} height={250} viewBox="0 0 250 250">
+              <Circle cx={125} cy={125} r={52} fill={C.surface} />
+              <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={11} fill="none" />
+              <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={7} fill="none" />
+              <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={4} fill="none" />
+              <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.55} strokeWidth={7} fill="none"
+                strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, clockM / 60)}
+                strokeLinecap="round" transform="rotate(-90,125,125)" />
+              <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.3} strokeWidth={4} fill="none"
+                strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, clockS / 60)}
+                strokeLinecap="round" transform="rotate(-90,125,125)" />
+              <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.35} strokeWidth={11} fill="none"
+                strokeDasharray={`${H_RING.circ}`} strokeDashoffset={arc(H_RING.circ, (nowDate.getHours() * 60 + nowDate.getMinutes()) / 1440)}
+                strokeLinecap="round" transform="rotate(-90,125,125)" />
+              {allSegments.map((entry, i) => {
+                const cfg = taskConfigs.find(t => t.id === entry.id);
+                if (!cfg) return null;
+                const from = Math.max(0, (entry.start - dayStartMs) / DAY_MS);
+                const to = Math.min(1, (entry.end - dayStartMs) / DAY_MS);
+                if (to <= from) return null;
+                const [da, doff] = arcSeg(H_RING.circ, from, to);
+                return <Circle key={i} cx={125} cy={125} r={H_RING.r} stroke={cfg.color} strokeOpacity={0.9} strokeWidth={11} fill="none"
+                  strokeDasharray={da} strokeDashoffset={doff} strokeLinecap="butt" transform="rotate(-90,125,125)" />;
+              })}
+              {activeCfg && <Circle cx={125} cy={125} r={M_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={7} fill="none"
+                strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, taskArcM)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
+              {activeCfg && <Circle cx={125} cy={125} r={S_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={4} fill="none"
+                strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, taskArcS)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
+            </Svg>
+            <View style={styles.clockFace}>
+              <Text style={styles.clockDigits}>{timeStr}</Text>
+              {activeCfg && (
+                <View style={styles.activeTag}>
+                  <Text style={styles.activeTagEmoji}>{activeCfg.emoji}</Text>
+                  <Text style={[styles.activeTagLabel, { color: activeCfg.color }]}>{activeCfg.label}</Text>
+                  <View style={[styles.pulseDot, { backgroundColor: C.pulse }]} />
+                </View>
+              )}
+            </View>
+          </>)}
+
+          {/* ── VIEW 1: week bars (PREMIUM) ── */}
+          {PREMIUM && viewIndex === 1 && (() => {
+            const weekStart = new Date(nowDate);
+            weekStart.setDate(nowDate.getDate() - nowDate.getDay());
+            weekStart.setHours(0, 0, 0, 0);
+            const weekDays: Date[] = [];
+            for (let i = 0; i < 7; i++) {
+              const d = new Date(weekStart);
+              d.setDate(weekStart.getDate() + i);
+              weekDays.push(d);
+            }
+            const todayKey = dateKey(now);
+            const liveBonus = activeCfg && tasks[activeCfg.id]?.startTimestamp
+              ? Math.max(0, Math.floor((now - tasks[activeCfg.id].startTimestamp!) / 1000)) : 0;
+            const BAR_H = 160;
+            const barW = Math.floor((width - 32 - 6 * 6) / 7);
+            const dayData = weekDays.map(d => {
+              const k = dateKey(d.getTime());
+              const isToday = k === todayKey;
+              const perTask = taskConfigs.map(cfg => {
+                let s = (taskDailyTotals[cfg.id]?.[k] || 0);
+                if (isToday && activeCfg?.id === cfg.id) s += liveBonus;
+                return { cfg, s };
+              }).filter(x => x.s > 0);
+              const total = perTask.reduce((sum, x) => sum + x.s, 0);
+              return { k, isToday, perTask, total };
+            });
+            const maxTotal = Math.max(...dayData.map(d => d.total), 1);
+            return (
+              <View style={styles.heatWeek}>
+                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
+                  {weekDays.map((d, i) => {
+                    const k = dateKey(d.getTime());
+                    const isToday = k === todayKey;
+                    const hist = weekHistories[k] || [];
+                    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    const segments: { from: number; to: number; color: string; key: string }[] = [];
+                    hist.forEach((entry, idx) => {
+                      const cfg = taskConfigs.find(t => t.id === entry.id);
+                      if (!cfg) return;
+                      const from = Math.max(0, (entry.start - dayStart) / DAY_MS);
+                      const to = Math.min(1, (entry.end - dayStart) / DAY_MS);
+                      if (to <= from) return;
+                      segments.push({ from, to, color: cfg.color, key: `h_${k}_${idx}_${entry.id}` });
+                    });
+                    // include live running segment for today
+                    if (isToday && activeCfg && tasks[activeCfg.id]?.startTimestamp) {
+                      const sTs = tasks[activeCfg.id].startTimestamp!;
+                      const from = Math.max(0, (sTs - dayStart) / DAY_MS);
+                      const to = Math.min(1, (now - dayStart) / DAY_MS);
+                      if (to > from) segments.push({ from, to, color: activeCfg.color, key: `live_${k}_${activeCfg.id}` });
+                    }
+                    segments.sort((a, b) => a.from - b.from);
+                    return (
+                      <View key={i} style={{ alignItems: "center", width: barW }}>
+                        <Text style={[styles.heatDayLabel, { marginBottom: 6, width: barW, color: isToday ? C.accent : C.muted }]}>{DAY_LETTERS[d.getDay()]}</Text>
+                        <View style={{ width: barW, height: BAR_H, backgroundColor: C.rim, borderRadius: 4, overflow: "hidden", position: "relative" as const, borderWidth: isToday ? 1 : 0, borderColor: C.accent }}>
+                          {segments.map((s) => {
+                            const top = Math.round(s.from * BAR_H);
+                            const h = Math.max(1, Math.round((s.to - s.from) * BAR_H));
+                            return <View key={s.key} style={{ position: "absolute" as const, left: 0, right: 0, top, height: h, backgroundColor: s.color }} />;
+                          })}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
-            )}
-          </View>
+            );
+          })()}
+
+          {/* ── VIEW 2: month heatmap (PREMIUM) ── */}
+          {PREMIUM && viewIndex === 2 && (() => {
+            const yr = nowDate.getFullYear(), mo = nowDate.getMonth();
+            const firstDow = new Date(yr, mo, 1).getDay();
+            const daysInMonth = new Date(yr, mo + 1, 0).getDate();
+            const todayKey = dateKey(now);
+            const liveBonus = activeCfg && tasks[activeCfg.id]?.startTimestamp
+              ? Math.max(0, Math.floor((now - tasks[activeCfg.id].startTimestamp!) / 1000)) : 0;
+            const selCfg = selectedTaskId ? taskConfigs.find(t => t.id === selectedTaskId) ?? null : null;
+            const cells: (number | null)[] = [];
+            for (let i = 0; i < firstDow; i++) cells.push(null);
+            for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+            while (cells.length % 7 !== 0) cells.push(null);
+            const rows: (number | null)[][] = [];
+            for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+            return (
+              <View style={styles.heatMonth}>
+                <Text style={styles.heatTitle}>{MONTHS[mo]} {yr}</Text>
+                <View style={styles.heatDayRow}>
+                  {DAY_LETTERS.map((l, i) => <Text key={i} style={styles.heatDayLabel}>{l}</Text>)}
+                </View>
+                {rows.map((row, ri) => (
+                  <View key={ri} style={styles.heatDayRow}>
+                    {row.map((day, ci) => {
+                      if (!day) return <View key={ci} style={styles.heatCell} />;
+                      const k = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                      const secs = selCfg
+                        ? (taskDailyTotals[selCfg.id]?.[k] || 0) + (k === todayKey && activeCfg?.id === selCfg.id ? liveBonus : 0)
+                        : (dailyTotals[k] || 0) + (k === todayKey ? liveBonus : 0);
+                      const bg = selCfg ? taskHeatColor(secs, selCfg.color) : heatColor(secs);
+                      return (
+                        <View key={ci} style={[styles.heatCell, { backgroundColor: bg }]}>
+                          <Text style={[styles.heatCellText, { color: secs > 0 ? C.bg : C.muted }]}>{day}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
+
+          {/* ── VIEW 3: year heatmap (PREMIUM) ── */}
+          {PREMIUM && viewIndex === 3 && (() => {
+            const yr = nowDate.getFullYear();
+            const jan1 = new Date(yr, 0, 1);
+            const CELL = 11, YGAP = 2, COL = CELL + YGAP;
+            const weeks: (Date | null)[][] = [];
+            const cur = new Date(jan1);
+            cur.setDate(cur.getDate() - jan1.getDay());
+            for (let w = 0; w < 54; w++) {
+              const week: (Date | null)[] = [];
+              for (let d = 0; d < 7; d++) {
+                week.push(cur.getFullYear() === yr ? new Date(cur) : null);
+                cur.setDate(cur.getDate() + 1);
+              }
+              if (week.every(d => d === null)) break;
+              weeks.push(week);
+            }
+            const todayKey = dateKey(now);
+            const liveBonus = activeCfg && tasks[activeCfg.id]?.startTimestamp
+              ? Math.max(0, Math.floor((now - tasks[activeCfg.id].startTimestamp!) / 1000)) : 0;
+            const selCfg = selectedTaskId ? taskConfigs.find(t => t.id === selectedTaskId) ?? null : null;
+            const monthSpans: { mo: number; count: number }[] = [];
+            weeks.forEach(week => {
+              const firstDate = week.find(d => d !== null);
+              if (!firstDate) return;
+              const mo = firstDate.getMonth();
+              if (monthSpans.length === 0 || monthSpans[monthSpans.length - 1].mo !== mo) {
+                monthSpans.push({ mo, count: 1 });
+              } else {
+                monthSpans[monthSpans.length - 1].count++;
+              }
+            });
+            return (
+              <View style={styles.heatYear}>
+                <Text style={styles.heatTitle}>{yr}</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View>
+                    <View style={{ flexDirection: "row", marginBottom: 4 }}>
+                      {monthSpans.map((span, i) => (
+                        <View key={i} style={{ width: span.count * COL }}>
+                          <Text style={styles.heatMonthLabel}>{MON_LABELS[span.mo]}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    {[0, 1, 2, 3, 4, 5, 6].map(dow => (
+                      <View key={dow} style={{ flexDirection: "row", marginBottom: YGAP }}>
+                        {weeks.map((week, wi) => {
+                          const date = week[dow];
+                          if (!date) return <View key={wi} style={{ width: CELL, height: CELL, marginRight: YGAP }} />;
+                          const k = dateKey(date.getTime());
+                          const secs = selCfg
+                            ? (taskDailyTotals[selCfg.id]?.[k] || 0) + (k === todayKey && activeCfg?.id === selCfg.id ? liveBonus : 0)
+                            : (dailyTotals[k] || 0) + (k === todayKey ? liveBonus : 0);
+                          const bg = selCfg ? taskHeatColor(secs, selCfg.color) : heatColor(secs);
+                          return <View key={wi} style={{ width: CELL, height: CELL, borderRadius: 2, backgroundColor: bg, marginRight: YGAP }} />;
+                        })}
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            );
+          })()}
         </View>
 
-        {/* Task grid */}
+        {/* Swipe dots (PREMIUM only) */}
+        {PREMIUM && (
+          <View style={styles.viewDots}>
+            {[0, 1, 2, 3].map(i => <View key={i} style={[styles.viewDot, viewIndex === i && styles.viewDotActive]} />)}
+          </View>
+        )}
+
+        {/* Task grid — tap selects for heatmap when not on clock view */}
         <View style={[styles.grid, { paddingHorizontal: H_PAD, gap: GAP }]}>
           {taskConfigs.map(cfg => {
-            const task     = tasks[cfg.id];
-            const secs     = getSeconds(task);
+            const task = tasks[cfg.id];
+            const secs = getSeconds(task);
             const isActive = task?.running ?? false;
+            const isSelected = selectedTaskId === cfg.id;
             return (
               <TouchableOpacity
                 key={cfg.id}
@@ -256,21 +638,29 @@ export default function App() {
                   { width: CS, height: CS, borderRadius: CS / 2 },
                   isActive
                     ? { borderColor: cfg.color, shadowColor: cfg.color, shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 10 }
-                    : { borderColor: C.rim },
+                    : isSelected
+                      ? { borderColor: cfg.color, borderWidth: 2.5 }
+                      : { borderColor: C.rim },
                 ]}
-                onPress={() => toggleTask(cfg.id)}
+                onPress={() => {
+                  if (viewIndex === 0) {
+                    toggleTask(cfg.id);
+                  } else {
+                    setSelectedTaskId(prev => prev === cfg.id ? null : cfg.id);
+                  }
+                }}
                 onLongPress={() => openEdit(cfg.id)}
                 activeOpacity={0.7}
               >
                 <Text style={{ fontSize: CS * 0.22 }}>{cfg.emoji}</Text>
-                <Text style={[styles.taskLabel, isActive && { color: cfg.color }, { fontSize: CS * 0.1 }]}>{cfg.label}</Text>
-                <Text style={[styles.taskTime, isActive && { color: cfg.color }, { fontSize: CS * 0.115 }]}>{fmtTime(secs)}</Text>
+                <Text style={[styles.taskLabel, (isActive || isSelected) && { color: cfg.color }, { fontSize: CS * 0.1 }]}>{cfg.label}</Text>
+                <Text style={[styles.taskTime, (isActive || isSelected) && { color: cfg.color }, { fontSize: CS * 0.115 }]}>{fmtTime(secs)}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <Text style={styles.hint}>tap to start{"\u2002\u00B7\u2002"}hold to edit</Text>
+        <Text style={styles.hint}>tap to start{"|\u2002\u00B7\u2002"}hold to edit{PREMIUM ? "\u2002\u00B7\u2002swipe \u2192 history  \u00b7  tap circle to filter" : ""}</Text>
       </ScrollView>
 
       {/* Edit modal */}
@@ -331,39 +721,52 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root:           { flex: 1, backgroundColor: C.bg },
-  topBar:         { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingHorizontal: 22, paddingTop: 56, paddingBottom: 2 },
-  topDate:        { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
-  topDay:         { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
-  totalText:      { fontFamily: "DMMono_400Regular", fontSize: 10, color: C.rim, textAlign: "center", letterSpacing: 1.5, paddingVertical: 2 },
-  scroll:         { alignItems: "center", paddingBottom: 52 },
-  mainTitle:      { fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: C.text, letterSpacing: 0.5, marginTop: 4, marginBottom: 2 },
-  clockWrapper:   { width: 250, height: 250, alignItems: "center", justifyContent: "center", marginVertical: 4 },
-  clockFace:      { position: "absolute", alignItems: "center", justifyContent: "center" },
-  clockDigits:    { fontFamily: "DMMono_500Medium", fontSize: 26, color: C.text, letterSpacing: 2 },
-  activeTag:      { flexDirection: "row", alignItems: "center", marginTop: 8, gap: 5 },
+  root: { flex: 1, backgroundColor: C.bg },
+  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingHorizontal: 22, paddingTop: 56, paddingBottom: 2 },
+  topDate: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
+  topDay: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
+  totalText: { fontFamily: "DMMono_400Regular", fontSize: 10, color: C.muted, textAlign: "center", letterSpacing: 1.5, paddingVertical: 2 },
+  scroll: { alignItems: "center", paddingBottom: 52 },
+  mainTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: C.text, letterSpacing: 0.5, marginTop: 4, marginBottom: 2 },
+  mainTitleInput: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: C.text, letterSpacing: 0.5, marginTop: 4, marginBottom: 2, borderBottomWidth: 1.5, borderBottomColor: C.accent, textAlign: "center", minWidth: 120 },
+  clockWrapper: { width: 250, height: 250, alignItems: "center", justifyContent: "center", marginVertical: 4 },
+  clockFace: { position: "absolute", alignItems: "center", justifyContent: "center" },
+  clockDigits: { fontFamily: "DMMono_500Medium", fontSize: 20, color: C.text, letterSpacing: 2 },
+  activeTag: { flexDirection: "row", alignItems: "center", marginTop: 8, gap: 5 },
   activeTagEmoji: { fontSize: 13 },
   activeTagLabel: { fontFamily: "DMMono_400Regular", fontSize: 12, letterSpacing: 0.3 },
-  pulseDot:       { width: 6, height: 6, borderRadius: 3 },
-  grid:           { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginTop: 8, width: "100%" },
-  taskCircle:     { backgroundColor: C.surface, borderWidth: 1.5, alignItems: "center", justifyContent: "center", gap: 2 },
-  taskLabel:      { fontFamily: "DMMono_400Regular", color: C.muted, letterSpacing: 0.2 },
-  taskTime:       { fontFamily: "DMMono_500Medium",  color: C.rim,   letterSpacing: 0.3 },
-  hint:           { marginTop: 20, fontFamily: "DMMono_400Regular", fontSize: 11, color: C.rim, letterSpacing: 0.3 },
-  modalOverlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "center", alignItems: "center" },
-  modalBox:       { backgroundColor: C.surface, borderRadius: 24, padding: 24, width: width - 56, borderWidth: 1, borderColor: C.rim },
-  modalTitle:     { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
-  emojiScroll:    { marginBottom: 14 },
-  emojiBtn:       { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 6 },
+  pulseDot: { width: 6, height: 6, borderRadius: 3 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginTop: 8, width: "100%" },
+  taskCircle: { backgroundColor: C.surface, borderWidth: 1.5, alignItems: "center", justifyContent: "center", gap: 2 },
+  taskLabel: { fontFamily: "DMMono_400Regular", color: C.muted, letterSpacing: 0.2 },
+  taskTime: { fontFamily: "DMMono_500Medium", color: C.text, letterSpacing: 0.3 },
+  hint: { marginTop: 20, paddingHorizontal: 20, fontFamily: "DMMono_400Regular", fontSize: 11, color: C.muted, letterSpacing: 0.3, textAlign: "center" as const },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "center", alignItems: "center" },
+  modalBox: { backgroundColor: C.surface, borderRadius: 24, padding: 24, width: width - 56, borderWidth: 1, borderColor: C.rim },
+  modalTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
+  emojiScroll: { marginBottom: 14 },
+  emojiBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 6 },
   emojiBtnActive: { backgroundColor: C.rim },
-  modalInput:     { backgroundColor: C.bg, color: C.text, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontFamily: "DMMono_400Regular", fontSize: 15, marginBottom: 16, borderWidth: 1, borderColor: C.rim },
-  colorRow:       { flexDirection: "row", gap: 8, justifyContent: "center", marginBottom: 16, flexWrap: "wrap" },
-  colorDot:       { width: 26, height: 26, borderRadius: 13 },
-  resetBtn:       { paddingVertical: 11, borderRadius: 12, backgroundColor: C.bg, alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: "#3a1515" },
-  resetBtnText:   { fontFamily: "DMMono_500Medium", color: C.pulse, fontSize: 13, letterSpacing: 0.5 },
-  modalBtns:      { flexDirection: "row", gap: 12 },
-  modalCancel:    { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: C.bg, alignItems: "center", borderWidth: 1, borderColor: C.rim },
-  modalCancelText:{ fontFamily: "DMMono_400Regular", color: C.muted, fontSize: 14 },
-  modalSave:      { flex: 1, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
-  modalSaveText:  { fontFamily: "DMMono_500Medium", color: C.bg, fontSize: 14 },
+  modalInput: { backgroundColor: C.bg, color: C.text, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontFamily: "DMMono_400Regular", fontSize: 15, marginBottom: 16, borderWidth: 1, borderColor: C.rim },
+  colorRow: { flexDirection: "row", gap: 8, justifyContent: "center", marginBottom: 16, flexWrap: "wrap" },
+  colorDot: { width: 26, height: 26, borderRadius: 13 },
+  resetBtn: { paddingVertical: 11, borderRadius: 12, backgroundColor: C.bg, alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: "#3a1515" },
+  resetBtnText: { fontFamily: "DMMono_500Medium", color: C.pulse, fontSize: 13, letterSpacing: 0.5 },
+  modalBtns: { flexDirection: "row", gap: 12 },
+  modalCancel: { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: C.bg, alignItems: "center", borderWidth: 1, borderColor: C.rim },
+  modalCancelText: { fontFamily: "DMMono_400Regular", color: C.muted, fontSize: 14 },
+  modalSave: { flex: 1, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
+  modalSaveText: { fontFamily: "DMMono_500Medium", color: C.bg, fontSize: 14 },
+  viewDots: { flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 6, marginBottom: 2 },
+  viewDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.rim },
+  viewDotActive: { backgroundColor: C.accent },
+  heatWeek: { width: "100%", padding: 12, alignItems: "center" as const },
+  heatMonth: { width: "100%", padding: 8, alignItems: "center" as const },
+  heatYear: { width: "100%", padding: 8 },
+  heatTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 16, color: C.text, marginBottom: 10, textAlign: "center" as const },
+  heatDayRow: { flexDirection: "row" as const, marginBottom: 3 },
+  heatDayLabel: { width: 32, textAlign: "center" as const, fontFamily: "DMMono_400Regular", fontSize: 9, color: C.muted, lineHeight: 14 },
+  heatCell: { width: 32, height: 32, borderRadius: 6, marginHorizontal: 1, backgroundColor: C.rim, alignItems: "center" as const, justifyContent: "center" as const },
+  heatCellText: { fontFamily: "DMMono_400Regular", fontSize: 10 },
+  heatMonthLabel: { fontFamily: "DMMono_400Regular", fontSize: 10, color: C.muted },
 });
