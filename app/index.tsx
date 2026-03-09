@@ -65,7 +65,6 @@ const DAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 // ─── Feature flags ───────────────────────────────────────────────────────────
-const PREMIUM = false;
 const DEBUG_CLOCK = true; // ← set false to hide 24h labels
 const DEBUG_SEGMENTS = false; // set true to log segment start/end + computed arc values
 
@@ -146,6 +145,9 @@ export default function App() {
   const viewIndexRef = useRef(0);
   const prevDayKeyRef = useRef(dateKey(Date.now()));
   const setView = (n: number) => { viewIndexRef.current = n; setViewIndex(n); };
+  const [PREMIUM, setPremium] = useState(false);
+  const premiumHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [premiumHoldProgress, setPremiumHoldProgress] = useState(0); // 0-10 seconds
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
@@ -175,6 +177,10 @@ export default function App() {
     setTitleEditing(false);
     AsyncStorage.setItem("mainTitle_v1", trimmed);
   };
+
+  useEffect(() => {
+    AsyncStorage.getItem("premium_v1").then(v => { if (v === "1") setPremium(true); });
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -464,7 +470,42 @@ export default function App() {
         )}
 
         {/* Swipeable: 0=clock  1=week  2=month  3=year (views 1-3 require premium) */}
-        <View {...(PREMIUM ? panResponder.panHandlers : {})} style={[styles.clockWrapper, PREMIUM && viewIndex > 0 && { height: "auto" as any, width: width - 32 }]}>
+        <View
+          {...panResponder.panHandlers}
+          style={[styles.clockWrapper, PREMIUM && viewIndex > 0 && { height: "auto" as any, width: width - 32 }]}
+          onStartShouldSetResponder={() => !PREMIUM}
+          onResponderGrant={() => {
+            if (PREMIUM) return;
+            setPremiumHoldProgress(0);
+            let count = 0;
+            premiumHoldTimer.current = setInterval(() => {
+              count++;
+              setPremiumHoldProgress(count);
+              if (count >= 10) {
+                clearInterval(premiumHoldTimer.current!);
+                premiumHoldTimer.current = null;
+                setPremiumHoldProgress(0);
+                setPremium(true);
+                AsyncStorage.setItem("premium_v1", "1");
+                Alert.alert("Premium Unlocked", "You now have access to week, month, and year tracking.");
+              }
+            }, 1000);
+          }}
+          onResponderRelease={() => {
+            if (premiumHoldTimer.current) {
+              clearInterval(premiumHoldTimer.current);
+              premiumHoldTimer.current = null;
+              setPremiumHoldProgress(0);
+            }
+          }}
+          onResponderTerminate={() => {
+            if (premiumHoldTimer.current) {
+              clearInterval(premiumHoldTimer.current);
+              premiumHoldTimer.current = null;
+              setPremiumHoldProgress(0);
+            }
+          }}
+        >
 
           {/* ── VIEW 0: triple-ring clock ── */}
           {viewIndex === 0 && (<>
@@ -497,6 +538,15 @@ export default function App() {
                 strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, taskArcM)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
               {activeCfg && <Circle cx={125} cy={125} r={S_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={4} fill="none"
                 strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, taskArcS)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
+              {/* ── Premium hold-to-unlock progress ring ── */}
+              {!PREMIUM && premiumHoldProgress > 0 && (() => {
+                const pr = 125 - 6;
+                const pcirc = 2 * Math.PI * pr;
+                const frac = premiumHoldProgress / 10;
+                return <Circle cx={125} cy={125} r={pr} stroke={C.accent} strokeOpacity={0.85} strokeWidth={5} fill="none"
+                  strokeDasharray={`${frac * pcirc} ${pcirc}`} strokeDashoffset={pcirc * 0.25}
+                  strokeLinecap="round" transform="rotate(-90,125,125)" />;
+              })()}
               {/* ── DEBUG: 24h hour labels ── */}
               {DEBUG_CLOCK && Array.from({ length: 24 }, (_, h) => {
                 const angle = (h / 24) * 2 * Math.PI - Math.PI / 2;
@@ -525,6 +575,11 @@ export default function App() {
             </Svg>
             <View style={styles.clockFace}>
               <Text style={styles.clockDigits}>{timeStr}</Text>
+              {!PREMIUM && premiumHoldProgress > 0 && (
+                <Text style={{ fontFamily: "DMMono_400Regular", fontSize: 11, color: C.accent, marginTop: 4, letterSpacing: 1 }}>
+                  hold {10 - premiumHoldProgress}s…
+                </Text>
+              )}
               {activeCfg && (
                 <View style={styles.activeTag}>
                   <Text style={[styles.activeTagLabel, { color: activeCfg.color }]}>{activeCfg.label}</Text>
