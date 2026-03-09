@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import Svg, { Circle, Line as SvgLine, Rect, Text as SvgText } from "react-native-svg";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 
 //  Color system 
 const C = {
@@ -920,7 +920,7 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>How to use</Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.helpContent}>
               {([
                 ["Tap a circle", "Start or stop tracking time for that activity."],
                 ["Hold a circle", "Edit its name, emoji and colour, or reset its timer."],
@@ -928,12 +928,11 @@ export default function App() {
                 ["Swipe the watch \u2192", "(Premium) Switch to week, month and year tracking views."],
                 ["Tap a circle (history views)", "(Premium) Filter the heatmap to one activity."],
                 ["Hold the title", "Rename the app title."],
-                ["Hold watch face (10 s)", "Unlock premium in test mode."],
                 ["+ circle", "(Premium) Add a brand-new tracking circle."],
               ] as [string, string][]).map(([title, desc], i) => (
-                <View key={i} style={{ marginBottom: 12 }}>
-                  <Text style={{ fontFamily: "DMMono_500Medium", fontSize: 12, color: C.accent, marginBottom: 2 }}>{title}</Text>
-                  <Text style={{ fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, lineHeight: 18 }}>{desc}</Text>
+                <View key={i} style={styles.helpItem}>
+                  <Text style={styles.helpItemTitle}>{title}</Text>
+                  <Text style={styles.helpItemDesc}>{desc}</Text>
                 </View>
               ))}
             </ScrollView>
@@ -970,9 +969,13 @@ const styles = StyleSheet.create({
   taskLabel: { fontFamily: "DMMono_400Regular", color: C.muted, letterSpacing: 0.2 },
   taskTime: { fontFamily: "DMMono_500Medium", color: C.text, letterSpacing: 0.3 },
   hint: { marginTop: 20, paddingHorizontal: 20, fontFamily: "DMMono_400Regular", fontSize: 11, color: C.muted, letterSpacing: 0.3, textAlign: "center" as const },
-  titleRow: { width: "100%", alignItems: "center", justifyContent: "center", marginTop: 6 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "center", alignItems: "center" },
-  modalBox: { backgroundColor: C.surface, borderRadius: 24, padding: 24, width: width - 56, borderWidth: 1, borderColor: C.rim },
+  titleRow: { width: "100%", alignItems: "center", justifyContent: "center", marginTop: 6 },
+  modalBox: { backgroundColor: C.surface, borderRadius: 24, padding: 24, width: width - 56, borderWidth: 1, borderColor: C.rim, maxHeight: height - 160 },
+  helpContent: { paddingBottom: 8 },
+  helpItem: { marginBottom: 12 },
+  helpItemTitle: { fontFamily: "DMMono_500Medium", fontSize: 13, color: C.accent, marginBottom: 4 },
+  helpItemDesc: { fontFamily: "DMMono_400Regular", fontSize: 13, color: C.muted, lineHeight: 18 },
   modalTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
   emojiScroll: { marginBottom: 14 },
   emojiBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 6 },
