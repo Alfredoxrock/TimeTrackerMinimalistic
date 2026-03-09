@@ -15,7 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Circle, Rect } from "react-native-svg";
+import Svg, { Circle, Line as SvgLine, Rect, Text as SvgText } from "react-native-svg";
 
 const { width } = Dimensions.get("window");
 
@@ -66,6 +66,8 @@ const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "
 
 // ─── Feature flags ───────────────────────────────────────────────────────────
 const PREMIUM = false;
+const DEBUG_CLOCK = true; // ← set false to hide 24h labels
+const DEBUG_SEGMENTS = false; // set true to log segment start/end + computed arc values
 
 // ─── Clock ring helpers ──────────────────────────────────────────────────────
 const ring = (r: number) => ({ r, circ: 2 * Math.PI * r });
@@ -74,10 +76,10 @@ const M_RING = ring(87);
 const S_RING = ring(68);
 const arc = (circ: number, p: number) => circ * (1 - Math.max(0, Math.min(1, p)));
 // arc segment: from/to are 0-1 fractions of full circle, result is [dashArray, dashOffset]
-const arcSeg = (circ: number, from: number, to: number): [string, number] => [
-  `${Math.max(0, to - from) * circ} ${circ}`,
-  circ * (1 - Math.max(0, from)),
-];
+const arcSeg = (circ: number, from: number, to: number): [string, number] => {
+  const len = Math.max(0, to - from) * circ;
+  return [`${len} ${circ - len}`, circ * (1 - Math.max(0, from))];
+};
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
 const dateKey = (ts: number): string => {
   const d = new Date(ts);
@@ -142,6 +144,7 @@ export default function App() {
   const [weekHistories, setWeekHistories] = useState<Record<string, HistoryEntry[]>>({});
   const [viewIndex, setViewIndex] = useState(0); // 0=clock 1=week 2=month 3=year
   const viewIndexRef = useRef(0);
+  const prevDayKeyRef = useRef(dateKey(Date.now()));
   const setView = (n: number) => { viewIndexRef.current = n; setViewIndex(n); };
   const panResponder = useRef(
     PanResponder.create({
@@ -185,7 +188,17 @@ export default function App() {
       if (sc) setTaskConfigs(JSON.parse(sc));
       if (st) setTasks(JSON.parse(st));
       if (title) setTitleValue(title);
-      if (hist) setDayHistory(JSON.parse(hist));
+      if (hist) {
+        // Sanitise entries: clip both start to today's midnight and end to now,
+        // then write the clean version back so storage is permanently fixed.
+        const todayMidnight = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+        const nowMs = Date.now();
+        const sanitised: HistoryEntry[] = (JSON.parse(hist) as HistoryEntry[])
+          .map(e => ({ ...e, start: Math.max(e.start, todayMidnight), end: Math.min(e.end, nowMs) }))
+          .filter(e => e.end > todayMidnight && e.end > e.start);
+        setDayHistory(sanitised);
+        AsyncStorage.setItem(`dayHistory_v1_${todayStr()}`, JSON.stringify(sanitised));
+      }
       if (dt) setDailyTotals(JSON.parse(dt));
       if (tdt) setTaskDailyTotals(JSON.parse(tdt));
     });
@@ -217,6 +230,26 @@ export default function App() {
       sub.remove();
     };
   }, []);
+
+  // Reset dayHistory when the day rolls over while the app is running.
+  useEffect(() => {
+    const curKey = dateKey(now);
+    if (prevDayKeyRef.current !== curKey) {
+      prevDayKeyRef.current = curKey;
+      (async () => {
+        const d = new Date(now);
+        const storageKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        const raw = await AsyncStorage.getItem(`dayHistory_v1_${storageKey}`);
+        if (raw) {
+          try { setDayHistory(JSON.parse(raw)); } catch { setDayHistory([]); }
+          try { setWeekHistories(prev => ({ ...prev, [curKey]: JSON.parse(raw) })); } catch { /* ignore */ }
+        } else {
+          setDayHistory([]);
+          setWeekHistories(prev => ({ ...prev, [curKey]: [] }));
+        }
+      })();
+    }
+  }, [now]);
 
   useEffect(() => { AsyncStorage.setItem("tasks_v5", JSON.stringify(tasks)); }, [tasks]);
   useEffect(() => { AsyncStorage.setItem("taskConfigs_v6", JSON.stringify(taskConfigs)); }, [taskConfigs]);
@@ -266,7 +299,25 @@ export default function App() {
       setTasks(() => updated);
     }
     if (newEntries.length) {
-      setDayHistory(h => [...h, ...newEntries]);
+      // Split cross-midnight segments: the portion before midnight goes to the previous
+      // day's storage key; only the portion from midnight onward enters today's dayHistory.
+      const todayEntries: HistoryEntry[] = [];
+      const prevDayMap: Record<string, HistoryEntry[]> = {};
+      for (const entry of newEntries) {
+        const d = new Date(entry.end);
+        const endMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+        if (entry.start < endMidnight) {
+          // Spans midnight — clip today's portion and stash the previous-day portion.
+          todayEntries.push({ id: entry.id, start: endMidnight, end: entry.end });
+          const prevKey = dateKey(entry.start);
+          if (!prevDayMap[prevKey]) prevDayMap[prevKey] = [];
+          prevDayMap[prevKey].push({ id: entry.id, start: entry.start, end: endMidnight });
+        } else {
+          todayEntries.push(entry);
+        }
+      }
+
+      setDayHistory(h => [...h, ...todayEntries]);
       setDailyTotals(prev => {
         const updated = { ...prev };
         for (const { start, end } of newEntries) {
@@ -285,6 +336,21 @@ export default function App() {
         }
         return updated;
       });
+
+      // Persist each previous-day slice into its own AsyncStorage key and sync weekHistories.
+      if (Object.keys(prevDayMap).length > 0) {
+        (async () => {
+          for (const [memKey, entries] of Object.entries(prevDayMap)) {
+            const d = new Date(entries[0].start);
+            const storageKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            const raw = await AsyncStorage.getItem(`dayHistory_v1_${storageKey}`);
+            const existing: HistoryEntry[] = raw ? JSON.parse(raw) : [];
+            const merged = [...existing, ...entries];
+            await AsyncStorage.setItem(`dayHistory_v1_${storageKey}`, JSON.stringify(merged));
+            setWeekHistories(prev => ({ ...prev, [memKey]: merged }));
+          }
+        })();
+      }
     }
     setNow(ts);
   };
@@ -335,9 +401,14 @@ export default function App() {
   const dayStartMs = (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.getTime(); })();
   const DAY_MS = 86400000;
   const liveEntry: HistoryEntry[] = activeCfg && tasks[activeCfg.id]?.startTimestamp
-    ? [{ id: activeCfg.id, start: tasks[activeCfg.id].startTimestamp!, end: now }]
+    ? [{ id: activeCfg.id, start: Math.max(tasks[activeCfg.id].startTimestamp!, dayStartMs), end: now }]
     : [];
   const allSegments = [...dayHistory, ...liveEntry];
+  // Only keep segments that overlap today, clip start to midnight and end to now (never render future time)
+  const todaySegments = allSegments
+    .filter(e => e.end > dayStartMs && e.start < dayStartMs + DAY_MS)
+    .map(e => ({ ...e, start: Math.max(e.start, dayStartMs), end: Math.min(e.end, now, dayStartMs + DAY_MS) }))
+    .filter(e => e.end > e.start);
 
   // Active task elapsed arcs (M + S rings)
   const activeElapsed = activeCfg ? getSeconds(tasks[activeCfg.id]) : 0;
@@ -392,12 +463,13 @@ export default function App() {
           </TouchableOpacity>
         )}
 
-        {/* Swipeable: 0=clock  1=week  2=month  3=year (views 1-3 require PREMIUM) */}
+        {/* Swipeable: 0=clock  1=week  2=month  3=year (views 1-3 require premium) */}
         <View {...(PREMIUM ? panResponder.panHandlers : {})} style={[styles.clockWrapper, PREMIUM && viewIndex > 0 && { height: "auto" as any, width: width - 32 }]}>
 
           {/* ── VIEW 0: triple-ring clock ── */}
           {viewIndex === 0 && (<>
-            <Svg width={250} height={250} viewBox="0 0 250 250">
+
+            <Svg width={250} height={250} viewBox="-16 -16 282 282">
               <Circle cx={125} cy={125} r={52} fill={C.surface} />
               <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={11} fill="none" />
               <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={7} fill="none" />
@@ -411,11 +483,11 @@ export default function App() {
               <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.35} strokeWidth={11} fill="none"
                 strokeDasharray={`${H_RING.circ}`} strokeDashoffset={arc(H_RING.circ, (nowDate.getHours() * 60 + nowDate.getMinutes()) / 1440)}
                 strokeLinecap="round" transform="rotate(-90,125,125)" />
-              {allSegments.map((entry, i) => {
+              {todaySegments.map((entry, i) => {
                 const cfg = taskConfigs.find(t => t.id === entry.id);
                 if (!cfg) return null;
-                const from = Math.max(0, (entry.start - dayStartMs) / DAY_MS);
-                const to = Math.min(1, (entry.end - dayStartMs) / DAY_MS);
+                const from = (entry.start - dayStartMs) / DAY_MS;
+                const to = (entry.end - dayStartMs) / DAY_MS;
                 if (to <= from) return null;
                 const [da, doff] = arcSeg(H_RING.circ, from, to);
                 return <Circle key={i} cx={125} cy={125} r={H_RING.r} stroke={cfg.color} strokeOpacity={0.9} strokeWidth={11} fill="none"
@@ -425,6 +497,31 @@ export default function App() {
                 strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, taskArcM)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
               {activeCfg && <Circle cx={125} cy={125} r={S_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={4} fill="none"
                 strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, taskArcS)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
+              {/* ── DEBUG: 24h hour labels ── */}
+              {DEBUG_CLOCK && Array.from({ length: 24 }, (_, h) => {
+                const angle = (h / 24) * 2 * Math.PI - Math.PI / 2;
+                const isMajor = h % 3 === 0;
+                const tIn = H_RING.r - (isMajor ? 8 : 4);
+                const tOut = H_RING.r + (isMajor ? 8 : 4);
+                const lx = 125 + (H_RING.r + 18) * Math.cos(angle);
+                const ly = 125 + (H_RING.r + 18) * Math.sin(angle);
+                const label = h === 0 ? "12a" : h === 12 ? "12p" : h < 12 ? `${h}a` : `${h - 12}p`;
+                return (
+                  <React.Fragment key={h}>
+                    <SvgLine
+                      x1={125 + tIn * Math.cos(angle)} y1={125 + tIn * Math.sin(angle)}
+                      x2={125 + tOut * Math.cos(angle)} y2={125 + tOut * Math.sin(angle)}
+                      stroke="#ffffff" strokeOpacity={isMajor ? 0.45 : 0.18} strokeWidth={isMajor ? 1.5 : 0.75}
+                    />
+                    {isMajor && (
+                      <SvgText x={lx} y={ly} textAnchor="middle" alignmentBaseline="central"
+                        fill="#ffffff" fillOpacity={0.6} fontSize={7}>
+                        {label}
+                      </SvgText>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </Svg>
             <View style={styles.clockFace}>
               <Text style={styles.clockDigits}>{timeStr}</Text>
@@ -438,7 +535,7 @@ export default function App() {
             </View>
           </>)}
 
-          {/* ── VIEW 1: week bars (PREMIUM) ── */}
+          {/* ── VIEW 1: week bars (premium) ── */}
           {PREMIUM && viewIndex === 1 && (() => {
             const weekStart = new Date(nowDate);
             weekStart.setDate(nowDate.getDate() - nowDate.getDay());
@@ -509,7 +606,7 @@ export default function App() {
             );
           })()}
 
-          {/* ── VIEW 2: month heatmap (PREMIUM) ── */}
+          {/* ── VIEW 2: month heatmap (premium) ── */}
           {PREMIUM && viewIndex === 2 && (() => {
             const yr = nowDate.getFullYear(), mo = nowDate.getMonth();
             const firstDow = new Date(yr, mo, 1).getDay();
@@ -551,7 +648,7 @@ export default function App() {
             );
           })()}
 
-          {/* ── VIEW 3: year heatmap (PREMIUM) ── */}
+          {/* ── VIEW 3: year heatmap (premium) ── */}
           {PREMIUM && viewIndex === 3 && (() => {
             const yr = nowDate.getFullYear();
             const jan1 = new Date(yr, 0, 1);
@@ -616,12 +713,14 @@ export default function App() {
           })()}
         </View>
 
-        {/* Swipe dots (PREMIUM only) */}
-        {PREMIUM && (
-          <View style={styles.viewDots}>
-            {[0, 1, 2, 3].map(i => <View key={i} style={[styles.viewDot, viewIndex === i && styles.viewDotActive]} />)}
-          </View>
-        )}
+        {/* Swipe dots (premium only) */}
+        {
+          PREMIUM && (
+            <View style={styles.viewDots}>
+              {[0, 1, 2, 3].map(i => <View key={i} style={[styles.viewDot, viewIndex === i && styles.viewDotActive]} />)}
+            </View>
+          )
+        }
 
         {/* Task grid — tap selects for heatmap when not on clock view */}
         <View style={[styles.grid, { paddingHorizontal: H_PAD, gap: GAP }]}>
@@ -660,11 +759,12 @@ export default function App() {
           })}
         </View>
 
-        <Text style={styles.hint}>tap to start{"|\u2002\u00B7\u2002"}hold to edit{PREMIUM ? "\u2002\u00B7\u2002swipe \u2192 history  \u00b7  tap circle to filter" : ""}</Text>
-      </ScrollView>
+        <Text style={styles.hint}>tap to start {"\u00B7"} hold to edit{PREMIUM ? " \u00B7 swipe \u2192 history  \u00B7  tap circle to filter" : ""}</Text>
+      </ScrollView >
 
       {/* Edit modal */}
-      <Modal visible={editId !== null} transparent animationType="fade" onRequestClose={() => setEditId(null)}>
+      < Modal visible={editId !== null
+      } transparent animationType="fade" onRequestClose={() => setEditId(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Edit Task</Text>
@@ -715,8 +815,8 @@ export default function App() {
             </View>
           </View>
         </View>
-      </Modal>
-    </View>
+      </Modal >
+    </View >
   );
 }
 
@@ -727,8 +827,8 @@ const styles = StyleSheet.create({
   topDay: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
   totalText: { fontFamily: "DMMono_400Regular", fontSize: 10, color: C.muted, textAlign: "center", letterSpacing: 1.5, paddingVertical: 2 },
   scroll: { alignItems: "center", paddingBottom: 52 },
-  mainTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: C.text, letterSpacing: 0.5, marginTop: 4, marginBottom: 2 },
-  mainTitleInput: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 26, color: C.text, letterSpacing: 0.5, marginTop: 4, marginBottom: 2, borderBottomWidth: 1.5, borderBottomColor: C.accent, textAlign: "center", minWidth: 120 },
+  mainTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: C.text, letterSpacing: 0.5, marginTop: -2, marginBottom: 0 },
+  mainTitleInput: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: C.text, letterSpacing: 0.5, marginTop: -2, marginBottom: 0, borderBottomWidth: 1.5, borderBottomColor: C.accent, textAlign: "center", minWidth: 120 },
   clockWrapper: { width: 250, height: 250, alignItems: "center", justifyContent: "center", marginVertical: 4 },
   clockFace: { position: "absolute", alignItems: "center", justifyContent: "center" },
   clockDigits: { fontFamily: "DMMono_500Medium", fontSize: 20, color: C.text, letterSpacing: 2 },
