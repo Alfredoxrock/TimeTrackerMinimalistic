@@ -920,7 +920,7 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>How to use</Text>
-            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.helpContent}>
+            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.helpContent} style={{ maxHeight: height - 320 }}>
               {([
                 ["Tap a circle", "Start or stop tracking time for that activity."],
                 ["Hold a circle", "Edit its name, emoji and colour, or reset its timer."],
