@@ -937,7 +937,7 @@ export default function App() {
               ))}
             </ScrollView>
             <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.accent, marginTop: 8 }]} onPress={() => setHelpVisible(false)}>
-              <Text style={styles.modalSaveText}>Close</Text>
+              <Text style={styles.modalSaveText}>CLOSE</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -989,7 +989,7 @@ const styles = StyleSheet.create({
   modalCancel: { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: C.bg, alignItems: "center", borderWidth: 1, borderColor: C.rim },
   modalCancelText: { fontFamily: "DMMono_400Regular", color: C.muted, fontSize: 14 },
   modalSave: { flex: 1, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
-  modalSaveText: { fontFamily: "DMMono_500Medium", color: C.bg, fontSize: 14 },
+  modalSaveText: { fontFamily: "DMMono_500Medium", color: C.text, fontSize: 15 },
   viewDots: { flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 6, marginBottom: 2 },
   viewDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.rim },
   viewDotActive: { backgroundColor: C.accent },
