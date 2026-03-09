@@ -937,7 +937,7 @@ export default function App() {
               ))}
             </ScrollView>
             <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.accent, marginTop: 8 }]} onPress={() => setHelpVisible(false)}>
-              <Text style={styles.modalSaveText}>Got it</Text>
+              <Text style={styles.modalSaveText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
