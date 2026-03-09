@@ -452,44 +452,42 @@ export default function App() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <Text style={styles.topDate}>{dateStr}</Text>
-        <View style={{ alignItems: "flex-end" }}>
-          <Text style={styles.topDay}>{dayStr}</Text>
-          <TouchableOpacity onPress={() => setHelpVisible(true)} style={{ marginTop: 4, padding: 2 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontFamily: "DMMono_400Regular", fontSize: 11, color: C.muted, opacity: 0.5 }}>?</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.topDay}>{dayStr}</Text>
       </View>
 
-      {/* Total tracked */}
-      {totalSec > 0 && (
-        <Text style={styles.totalText}>{fmtTotal(totalSec).toUpperCase()}</Text>
-      )}
-
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {titleEditing ? (
-          <TextInput
-            ref={titleInputRef}
-            style={styles.mainTitleInput}
-            value={titleValue}
-            onChangeText={setTitleValue}
-            onBlur={() => commitTitle(titleValue)}
-            onSubmitEditing={() => commitTitle(titleValue)}
-            returnKeyType="done"
-            maxLength={24}
-            autoFocus
-            selectTextOnFocus
-          />
-        ) : (
-          <TouchableOpacity
-            onLongPress={() => {
-              setTitleEditing(true);
-              setTimeout(() => titleInputRef.current?.focus(), 50);
-            }}
-            delayLongPress={400}
-            activeOpacity={1}
-          >
-            <Text style={styles.mainTitle}>{titleValue}</Text>
+        <View style={styles.titleRow}>
+          {titleEditing ? (
+            <TextInput
+              ref={titleInputRef}
+              style={styles.mainTitleInput}
+              value={titleValue}
+              onChangeText={setTitleValue}
+              onBlur={() => commitTitle(titleValue)}
+              onSubmitEditing={() => commitTitle(titleValue)}
+              returnKeyType="done"
+              maxLength={24}
+              autoFocus
+              selectTextOnFocus
+            />
+          ) : (
+            <TouchableOpacity
+              onLongPress={() => {
+                setTitleEditing(true);
+                setTimeout(() => titleInputRef.current?.focus(), 50);
+              }}
+              delayLongPress={400}
+              activeOpacity={1}
+            >
+              <Text style={styles.mainTitle}>{titleValue}</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.helpBtn, { position: "absolute", right: 14, top: 10 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.helpBtnText}>?</Text>
           </TouchableOpacity>
+        </View>
+        {totalSec > 0 && (
+          <Text style={styles.totalText}>{fmtTotal(totalSec).toUpperCase()}</Text>
         )}
 
         {/* Swipeable: 0=clock  1=week  2=month  3=year (views 1-3 require premium) */}
@@ -951,10 +949,12 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingHorizontal: 22, paddingTop: 56, paddingBottom: 2 },
+  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 14, paddingTop: 34, paddingBottom: 6 },
   topDate: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
   topDay: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, letterSpacing: 0.5 },
   totalText: { fontFamily: "DMMono_400Regular", fontSize: 10, color: C.muted, textAlign: "center", letterSpacing: 1.5, paddingVertical: 2 },
+  helpBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  helpBtnText: { fontFamily: "DMMono_400Regular", fontSize: 15, color: C.muted, opacity: 0.9 },
   scroll: { alignItems: "center", paddingBottom: 52 },
   mainTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: C.text, letterSpacing: 0.5, marginTop: -2, marginBottom: 0 },
   mainTitleInput: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: C.text, letterSpacing: 0.5, marginTop: -2, marginBottom: 0, borderBottomWidth: 1.5, borderBottomColor: C.accent, textAlign: "center", minWidth: 120 },
@@ -970,6 +970,7 @@ const styles = StyleSheet.create({
   taskLabel: { fontFamily: "DMMono_400Regular", color: C.muted, letterSpacing: 0.2 },
   taskTime: { fontFamily: "DMMono_500Medium", color: C.text, letterSpacing: 0.3 },
   hint: { marginTop: 20, paddingHorizontal: 20, fontFamily: "DMMono_400Regular", fontSize: 11, color: C.muted, letterSpacing: 0.3, textAlign: "center" as const },
+  titleRow: { width: "100%", alignItems: "center", justifyContent: "center", marginTop: 6 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "center", alignItems: "center" },
   modalBox: { backgroundColor: C.surface, borderRadius: 24, padding: 24, width: width - 56, borderWidth: 1, borderColor: C.rim },
   modalTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
