@@ -71,9 +71,9 @@ const DEBUG_SEGMENTS = false; // set true to log segment start/end + computed ar
 
 // ─── Clock ring helpers ──────────────────────────────────────────────────────
 const ring = (r: number) => ({ r, circ: 2 * Math.PI * r });
-const H_RING = ring(106);
-const M_RING = ring(87);
-const S_RING = ring(68);
+const H_RING = ring(112);
+const M_RING = ring(93);
+const S_RING = ring(74);
 const arc = (circ: number, p: number) => circ * (1 - Math.max(0, Math.min(1, p)));
 // arc segment: from/to are 0-1 fractions of full circle, result is [dashArray, dashOffset]
 const arcSeg = (circ: number, from: number, to: number): [string, number] => {
@@ -527,9 +527,7 @@ export default function App() {
               <Text style={styles.clockDigits}>{timeStr}</Text>
               {activeCfg && (
                 <View style={styles.activeTag}>
-                  <Text style={styles.activeTagEmoji}>{activeCfg.emoji}</Text>
                   <Text style={[styles.activeTagLabel, { color: activeCfg.color }]}>{activeCfg.label}</Text>
-                  <View style={[styles.pulseDot, { backgroundColor: C.pulse }]} />
                 </View>
               )}
             </View>
