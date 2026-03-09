@@ -164,6 +164,15 @@ export default function App() {
   const [editEmoji, setEditEmoji] = useState(EMOJI_LIST[0]);
   const [editColorIdx, setEditColorIdx] = useState(0);
 
+  // Add-circle modal state (premium only)
+  const [addCircleVisible, setAddCircleVisible] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newEmoji, setNewEmoji] = useState(EMOJI_LIST[0]);
+  const [newColorIdx, setNewColorIdx] = useState(0);
+
+  // Help modal state
+  const [helpVisible, setHelpVisible] = useState(false);
+
   // Title edit state
   const [titleValue, setTitleValue] = useState("Day Circles");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -377,6 +386,17 @@ export default function App() {
     setEditId(null);
   };
 
+  const addCircle = () => {
+    if (!newLabel.trim()) return;
+    const id = `task_${Date.now()}`;
+    setTaskConfigs(prev => [...prev, { id, label: newLabel.trim(), emoji: newEmoji, color: PALETTE[newColorIdx] }]);
+    setTasks(prev => ({ ...prev, [id]: { accumulated: 0, running: false } }));
+    setAddCircleVisible(false);
+    setNewLabel("");
+    setNewEmoji(EMOJI_LIST[0]);
+    setNewColorIdx(0);
+  };
+
   const resetFromEdit = () => {
     if (!editId) return;
     Alert.alert("Reset Timer", "Reset all tracked time for this task?", [
@@ -432,7 +452,12 @@ export default function App() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <Text style={styles.topDate}>{dateStr}</Text>
-        <Text style={styles.topDay}>{dayStr}</Text>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.topDay}>{dayStr}</Text>
+          <TouchableOpacity onPress={() => setHelpVisible(true)} style={{ marginTop: 4, padding: 2 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontFamily: "DMMono_400Regular", fontSize: 11, color: C.muted, opacity: 0.5 }}>?</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Total tracked */}
@@ -775,6 +800,17 @@ export default function App() {
               </TouchableOpacity>
             );
           })}
+          {/* Add circle button — premium only */}
+          {PREMIUM && (
+            <TouchableOpacity
+              style={[styles.taskCircle, { width: CS, height: CS, borderRadius: CS / 2, borderColor: C.muted, borderStyle: "dashed", opacity: 0.5 }]}
+              onPress={() => setAddCircleVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: CS * 0.28, color: C.muted }}>+</Text>
+              <Text style={[styles.taskLabel, { fontSize: CS * 0.09 }]}>new</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <Text style={styles.hint}>tap to start {"\u00B7"} hold to edit{PREMIUM ? " \u00B7 swipe \u2192 history  \u00B7  tap circle to filter" : ""}</Text>
@@ -834,6 +870,81 @@ export default function App() {
           </View>
         </View>
       </Modal >
+
+      {/* Add-circle modal (premium) */}
+      <Modal visible={addCircleVisible} transparent animationType="fade" onRequestClose={() => setAddCircleVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>New Circle</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.emojiScroll}>
+              {EMOJI_LIST.map((e, i) => (
+                <TouchableOpacity key={i} onPress={() => setNewEmoji(e)}
+                  style={[styles.emojiBtn, newEmoji === e && styles.emojiBtnActive]}>
+                  <Text style={{ fontSize: 22 }}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Task name..."
+              placeholderTextColor={C.muted}
+              value={newLabel}
+              onChangeText={setNewLabel}
+              maxLength={16}
+            />
+            <View style={styles.colorRow}>
+              {PALETTE.map((color, i) => (
+                <TouchableOpacity key={i} onPress={() => setNewColorIdx(i)}
+                  style={[
+                    styles.colorDot,
+                    { backgroundColor: color },
+                    newColorIdx === i && { borderWidth: 3, borderColor: C.text },
+                  ]} />
+              ))}
+            </View>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setAddCircleVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSave, { backgroundColor: PALETTE[newColorIdx] }]}
+                onPress={addCircle}
+              >
+                <Text style={styles.modalSaveText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Help modal */}
+      <Modal visible={helpVisible} transparent animationType="fade" onRequestClose={() => setHelpVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>How to use</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {([
+                ["Tap a circle", "Start or stop tracking time for that activity."],
+                ["Hold a circle", "Edit its name, emoji and colour, or reset its timer."],
+                ["Watch face", "The outer ring shows your 24h day — coloured arcs are tracked sessions. The middle and inner rings show the active task's minutes and seconds."],
+                ["Swipe the watch \u2192", "(Premium) Switch to week, month and year tracking views."],
+                ["Tap a circle (history views)", "(Premium) Filter the heatmap to one activity."],
+                ["Hold the title", "Rename the app title."],
+                ["Hold watch face (10 s)", "Unlock premium in test mode."],
+                ["+ circle", "(Premium) Add a brand-new tracking circle."],
+              ] as [string, string][]).map(([title, desc], i) => (
+                <View key={i} style={{ marginBottom: 12 }}>
+                  <Text style={{ fontFamily: "DMMono_500Medium", fontSize: 12, color: C.accent, marginBottom: 2 }}>{title}</Text>
+                  <Text style={{ fontFamily: "DMMono_400Regular", fontSize: 12, color: C.muted, lineHeight: 18 }}>{desc}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.accent, marginTop: 8 }]} onPress={() => setHelpVisible(false)}>
+              <Text style={styles.modalSaveText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View >
   );
 }
