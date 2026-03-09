@@ -469,7 +469,7 @@ export default function App() {
           {/* ── VIEW 0: triple-ring clock ── */}
           {viewIndex === 0 && (<>
 
-            <Svg width={300} height={300} viewBox="-20 -20 340 340">
+            <Svg width={250} height={250} viewBox="-16 -16 282 282">
               <Circle cx={125} cy={125} r={52} fill={C.surface} />
               <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={11} fill="none" />
               <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={7} fill="none" />
@@ -829,9 +829,9 @@ const styles = StyleSheet.create({
   scroll: { alignItems: "center", paddingBottom: 52 },
   mainTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: C.text, letterSpacing: 0.5, marginTop: -2, marginBottom: 0 },
   mainTitleInput: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 22, color: C.text, letterSpacing: 0.5, marginTop: -2, marginBottom: 0, borderBottomWidth: 1.5, borderBottomColor: C.accent, textAlign: "center", minWidth: 120 },
-  clockWrapper: { width: 300, height: 300, alignItems: "center", justifyContent: "center", marginVertical: 4 },
+  clockWrapper: { width: 250, height: 250, alignItems: "center", justifyContent: "center", marginVertical: 4 },
   clockFace: { position: "absolute", alignItems: "center", justifyContent: "center" },
-  clockDigits: { fontFamily: "DMMono_500Medium", fontSize: 24, color: C.text, letterSpacing: 2 },
+  clockDigits: { fontFamily: "DMMono_500Medium", fontSize: 20, color: C.text, letterSpacing: 2 },
   activeTag: { flexDirection: "row", alignItems: "center", marginTop: 8, gap: 5 },
   activeTagEmoji: { fontSize: 13 },
   activeTagLabel: { fontFamily: "DMMono_400Regular", fontSize: 12, letterSpacing: 0.3 },
