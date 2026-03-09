@@ -146,8 +146,6 @@ export default function App() {
   const prevDayKeyRef = useRef(dateKey(Date.now()));
   const setView = (n: number) => { viewIndexRef.current = n; setViewIndex(n); };
   const [PREMIUM, setPremium] = useState(false);
-  const premiumHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [premiumHoldProgress, setPremiumHoldProgress] = useState(0); // 0-10 seconds
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
@@ -473,119 +471,86 @@ export default function App() {
         <View
           {...panResponder.panHandlers}
           style={[styles.clockWrapper, PREMIUM && viewIndex > 0 && { height: "auto" as any, width: width - 32 }]}
-          onStartShouldSetResponder={() => !PREMIUM}
-          onResponderGrant={() => {
-            if (PREMIUM) return;
-            setPremiumHoldProgress(0);
-            let count = 0;
-            premiumHoldTimer.current = setInterval(() => {
-              count++;
-              setPremiumHoldProgress(count);
-              if (count >= 10) {
-                clearInterval(premiumHoldTimer.current!);
-                premiumHoldTimer.current = null;
-                setPremiumHoldProgress(0);
-                setPremium(true);
-                AsyncStorage.setItem("premium_v1", "1");
-                Alert.alert("Premium Unlocked", "You now have access to week, month, and year tracking.");
-              }
-            }, 1000);
-          }}
-          onResponderRelease={() => {
-            if (premiumHoldTimer.current) {
-              clearInterval(premiumHoldTimer.current);
-              premiumHoldTimer.current = null;
-              setPremiumHoldProgress(0);
-            }
-          }}
-          onResponderTerminate={() => {
-            if (premiumHoldTimer.current) {
-              clearInterval(premiumHoldTimer.current);
-              premiumHoldTimer.current = null;
-              setPremiumHoldProgress(0);
-            }
-          }}
         >
 
           {/* ── VIEW 0: triple-ring clock ── */}
           {viewIndex === 0 && (<>
 
-            <Svg width={250} height={250} viewBox="-16 -16 282 282">
-              <Circle cx={125} cy={125} r={52} fill={C.surface} />
-              <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={11} fill="none" />
-              <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={7} fill="none" />
-              <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={4} fill="none" />
-              <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.55} strokeWidth={7} fill="none"
-                strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, clockM / 60)}
-                strokeLinecap="round" transform="rotate(-90,125,125)" />
-              <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.3} strokeWidth={4} fill="none"
-                strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, clockS / 60)}
-                strokeLinecap="round" transform="rotate(-90,125,125)" />
-              <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.35} strokeWidth={11} fill="none"
-                strokeDasharray={`${H_RING.circ}`} strokeDashoffset={arc(H_RING.circ, (nowDate.getHours() * 60 + nowDate.getMinutes()) / 1440)}
-                strokeLinecap="round" transform="rotate(-90,125,125)" />
-              {todaySegments.map((entry, i) => {
-                const cfg = taskConfigs.find(t => t.id === entry.id);
-                if (!cfg) return null;
-                const from = (entry.start - dayStartMs) / DAY_MS;
-                const to = (entry.end - dayStartMs) / DAY_MS;
-                if (to <= from) return null;
-                const [da, doff] = arcSeg(H_RING.circ, from, to);
-                return <Circle key={i} cx={125} cy={125} r={H_RING.r} stroke={cfg.color} strokeOpacity={0.9} strokeWidth={11} fill="none"
-                  strokeDasharray={da} strokeDashoffset={doff} strokeLinecap="butt" transform="rotate(-90,125,125)" />;
-              })}
-              {activeCfg && <Circle cx={125} cy={125} r={M_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={7} fill="none"
-                strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, taskArcM)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
-              {activeCfg && <Circle cx={125} cy={125} r={S_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={4} fill="none"
-                strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, taskArcS)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
-              {/* ── Premium hold-to-unlock progress ring ── */}
-              {!PREMIUM && premiumHoldProgress > 0 && (() => {
-                const pr = 125 - 6;
-                const pcirc = 2 * Math.PI * pr;
-                const frac = premiumHoldProgress / 10;
-                return <Circle cx={125} cy={125} r={pr} stroke={C.accent} strokeOpacity={0.85} strokeWidth={5} fill="none"
-                  strokeDasharray={`${frac * pcirc} ${pcirc}`} strokeDashoffset={pcirc * 0.25}
-                  strokeLinecap="round" transform="rotate(-90,125,125)" />;
-              })()}
-              {/* ── DEBUG: 24h hour labels ── */}
-              {DEBUG_CLOCK && Array.from({ length: 24 }, (_, h) => {
-                const angle = (h / 24) * 2 * Math.PI - Math.PI / 2;
-                const isMajor = h % 3 === 0;
-                const tIn = H_RING.r - (isMajor ? 8 : 4);
-                const tOut = H_RING.r + (isMajor ? 8 : 4);
-                const lx = 125 + (H_RING.r + 18) * Math.cos(angle);
-                const ly = 125 + (H_RING.r + 18) * Math.sin(angle);
-                const label = h === 0 ? "12a" : h === 12 ? "12p" : h < 12 ? `${h}a` : `${h - 12}p`;
-                return (
-                  <React.Fragment key={h}>
-                    <SvgLine
-                      x1={125 + tIn * Math.cos(angle)} y1={125 + tIn * Math.sin(angle)}
-                      x2={125 + tOut * Math.cos(angle)} y2={125 + tOut * Math.sin(angle)}
-                      stroke="#ffffff" strokeOpacity={isMajor ? 0.45 : 0.18} strokeWidth={isMajor ? 1.5 : 0.75}
-                    />
-                    {isMajor && (
-                      <SvgText x={lx} y={ly} textAnchor="middle" alignmentBaseline="central"
-                        fill="#ffffff" fillOpacity={0.6} fontSize={7}>
-                        {label}
-                      </SvgText>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </Svg>
-            <View style={styles.clockFace}>
-              <Text style={styles.clockDigits}>{timeStr}</Text>
-              {!PREMIUM && premiumHoldProgress > 0 && (
-                <Text style={{ fontFamily: "DMMono_400Regular", fontSize: 11, color: C.accent, marginTop: 4, letterSpacing: 1 }}>
-                  hold {10 - premiumHoldProgress}s…
-                </Text>
-              )}
-              {activeCfg && (
-                <View style={styles.activeTag}>
-                  <Text style={[styles.activeTagLabel, { color: activeCfg.color }]}>{activeCfg.label}</Text>
-                </View>
-              )}
-            </View>
+            <TouchableOpacity
+              activeOpacity={1}
+              delayLongPress={10000}
+              onLongPress={() => {
+                if (!PREMIUM) {
+                  setPremium(true);
+                  AsyncStorage.setItem("premium_v1", "1");
+                  Alert.alert("Premium Unlocked", "You now have access to week, month, and year tracking.");
+                }
+              }}
+              style={{ alignItems: "center", justifyContent: "center" }}
+            >
+              <Svg width={250} height={250} viewBox="-16 -16 282 282">
+                <Circle cx={125} cy={125} r={52} fill={C.surface} />
+                <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={11} fill="none" />
+                <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={7} fill="none" />
+                <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.07} strokeWidth={4} fill="none" />
+                <Circle cx={125} cy={125} r={M_RING.r} stroke={C.accent} strokeOpacity={0.55} strokeWidth={7} fill="none"
+                  strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, clockM / 60)}
+                  strokeLinecap="round" transform="rotate(-90,125,125)" />
+                <Circle cx={125} cy={125} r={S_RING.r} stroke={C.accent} strokeOpacity={0.3} strokeWidth={4} fill="none"
+                  strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, clockS / 60)}
+                  strokeLinecap="round" transform="rotate(-90,125,125)" />
+                <Circle cx={125} cy={125} r={H_RING.r} stroke={C.accent} strokeOpacity={0.35} strokeWidth={11} fill="none"
+                  strokeDasharray={`${H_RING.circ}`} strokeDashoffset={arc(H_RING.circ, (nowDate.getHours() * 60 + nowDate.getMinutes()) / 1440)}
+                  strokeLinecap="round" transform="rotate(-90,125,125)" />
+                {todaySegments.map((entry, i) => {
+                  const cfg = taskConfigs.find(t => t.id === entry.id);
+                  if (!cfg) return null;
+                  const from = (entry.start - dayStartMs) / DAY_MS;
+                  const to = (entry.end - dayStartMs) / DAY_MS;
+                  if (to <= from) return null;
+                  const [da, doff] = arcSeg(H_RING.circ, from, to);
+                  return <Circle key={i} cx={125} cy={125} r={H_RING.r} stroke={cfg.color} strokeOpacity={0.9} strokeWidth={11} fill="none"
+                    strokeDasharray={da} strokeDashoffset={doff} strokeLinecap="butt" transform="rotate(-90,125,125)" />;
+                })}
+                {activeCfg && <Circle cx={125} cy={125} r={M_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={7} fill="none"
+                  strokeDasharray={`${M_RING.circ}`} strokeDashoffset={arc(M_RING.circ, taskArcM)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
+                {activeCfg && <Circle cx={125} cy={125} r={S_RING.r} stroke={activeCfg.color} strokeOpacity={0.9} strokeWidth={4} fill="none"
+                  strokeDasharray={`${S_RING.circ}`} strokeDashoffset={arc(S_RING.circ, taskArcS)} strokeLinecap="round" transform="rotate(-90,125,125)" />}
+                {/* ── DEBUG: 24h hour labels ── */}
+                {DEBUG_CLOCK && Array.from({ length: 24 }, (_, h) => {
+                  const angle = (h / 24) * 2 * Math.PI - Math.PI / 2;
+                  const isMajor = h % 3 === 0;
+                  const tIn = H_RING.r - (isMajor ? 8 : 4);
+                  const tOut = H_RING.r + (isMajor ? 8 : 4);
+                  const lx = 125 + (H_RING.r + 18) * Math.cos(angle);
+                  const ly = 125 + (H_RING.r + 18) * Math.sin(angle);
+                  const label = h === 0 ? "12a" : h === 12 ? "12p" : h < 12 ? `${h}a` : `${h - 12}p`;
+                  return (
+                    <React.Fragment key={h}>
+                      <SvgLine
+                        x1={125 + tIn * Math.cos(angle)} y1={125 + tIn * Math.sin(angle)}
+                        x2={125 + tOut * Math.cos(angle)} y2={125 + tOut * Math.sin(angle)}
+                        stroke="#ffffff" strokeOpacity={isMajor ? 0.45 : 0.18} strokeWidth={isMajor ? 1.5 : 0.75}
+                      />
+                      {isMajor && (
+                        <SvgText x={lx} y={ly} textAnchor="middle" alignmentBaseline="central"
+                          fill="#ffffff" fillOpacity={0.6} fontSize={7}>
+                          {label}
+                        </SvgText>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </Svg>
+              <View style={styles.clockFace}>
+                <Text style={styles.clockDigits}>{timeStr}</Text>
+                {activeCfg && (
+                  <View style={styles.activeTag}>
+                    <Text style={[styles.activeTagLabel, { color: activeCfg.color }]}>{activeCfg.label}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
           </>)}
 
           {/* ── VIEW 1: week bars (premium) ── */}
