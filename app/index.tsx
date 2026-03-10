@@ -29,6 +29,7 @@ const C = {
   accent: "#c8b8ff",
   pulse: "#ff6b6b",
   success: "#22c55e",
+  purpleDark: "#5b3fa0",
 };
 
 //  Types 
@@ -939,7 +940,7 @@ export default function App() {
             </ScrollView>
             <View style={{ alignItems: "center", marginTop: 8 }}>
               <TouchableOpacity
-                style={[styles.modalSave, { flex: 0, backgroundColor: C.accent, width: 160, paddingHorizontal: 20, height: 48 }]}
+                style={[styles.modalSave, { flex: 0, backgroundColor: C.purpleDark, width: 160, paddingHorizontal: 20, height: 48 }]}
                 onPress={() => setHelpVisible(false)}
                 accessibilityLabel="Close help"
               >
