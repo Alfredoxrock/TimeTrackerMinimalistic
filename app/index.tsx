@@ -938,8 +938,12 @@ export default function App() {
               ))}
             </ScrollView>
             <View style={{ alignItems: "center", marginTop: 8 }}>
-              <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.success }]} onPress={() => setHelpVisible(false)} accessibilityLabel="Close help">
-                <Text style={styles.modalSaveText}>CLOSE</Text>
+              <TouchableOpacity
+                style={[styles.modalSave, { backgroundColor: C.accent, width: 160, paddingHorizontal: 20 }]}
+                onPress={() => setHelpVisible(false)}
+                accessibilityLabel="Close help"
+              >
+                <Text style={[styles.modalSaveText, { color: C.bg }]}>CLOSE</Text>
               </TouchableOpacity>
               <Text style={styles.modalCloseLabel}>Close</Text>
             </View>
