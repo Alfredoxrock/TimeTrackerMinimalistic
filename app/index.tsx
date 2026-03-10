@@ -266,6 +266,9 @@ export default function App() {
     }
   }, [now]);
 
+  // Deselect task filter when user navigates back to watch face
+  useEffect(() => { if (viewIndex === 0) setSelectedTaskId(null); }, [viewIndex]);
+
   useEffect(() => { AsyncStorage.setItem("tasks_v5", JSON.stringify(tasks)); }, [tasks]);
   useEffect(() => { AsyncStorage.setItem("taskConfigs_v6", JSON.stringify(taskConfigs)); }, [taskConfigs]);
   useEffect(() => {
