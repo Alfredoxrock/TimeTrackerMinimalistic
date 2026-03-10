@@ -939,13 +939,12 @@ export default function App() {
             </ScrollView>
             <View style={{ alignItems: "center", marginTop: 8 }}>
               <TouchableOpacity
-                style={[styles.modalSave, { backgroundColor: C.accent, width: 160, paddingHorizontal: 20 }]}
+                style={[styles.modalSave, { backgroundColor: C.accent, width: 160, paddingHorizontal: 20, height: 48 }]}
                 onPress={() => setHelpVisible(false)}
                 accessibilityLabel="Close help"
               >
                 <Text style={[styles.modalSaveText, { color: C.bg }]}>CLOSE</Text>
               </TouchableOpacity>
-              <Text style={styles.modalCloseLabel}>Close</Text>
             </View>
           </View>
         </View>
@@ -984,7 +983,7 @@ const styles = StyleSheet.create({
   helpItem: { marginBottom: 12 },
   helpItemTitle: { fontFamily: "DMMono_500Medium", fontSize: 13, color: C.accent, marginBottom: 4 },
   helpItemDesc: { fontFamily: "DMMono_400Regular", fontSize: 13, color: C.muted, lineHeight: 18 },
-  modalCloseLabel: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.text, marginTop: 6 },
+  
   modalTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
   emojiScroll: { marginBottom: 14 },
   emojiBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 6 },
