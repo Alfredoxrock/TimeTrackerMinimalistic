@@ -8,6 +8,7 @@ import {
   Dimensions,
   Modal,
   PanResponder,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,8 +17,16 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle, Line as SvgLine, Rect, Text as SvgText } from "react-native-svg";
+import Purchases, { LOG_LEVEL, PurchasesPackage } from "react-native-purchases";
 
 const { width, height } = Dimensions.get("window");
+
+// ─── RevenueCat config ─────────────────────────────────────────────────────
+// 1. Create a free account at https://app.revenuecat.com
+// 2. Add your app (Android) and create a "premium" entitlement + product
+// 3. Paste the Google API key from RevenueCat → Project settings → API keys
+const RC_API_KEY_ANDROID = "PASTE_YOUR_REVENUECAT_ANDROID_API_KEY_HERE";
+const RC_ENTITLEMENT = "premium";
 
 //  Color system 
 const C = {
@@ -148,14 +157,19 @@ export default function App() {
   const prevDayKeyRef = useRef(dateKey(Date.now()));
   const setView = (n: number) => { viewIndexRef.current = n; setViewIndex(n); };
   const [PREMIUM, setPremium] = useState(false);
+  const premiumRef = useRef(false);
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
+  const [offerings, setOfferings] = useState<any>(null);
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
         Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onPanResponderRelease: (_, g) => {
         const cur = viewIndexRef.current;
-        if (g.dx < -40 && cur < 3) { viewIndexRef.current = cur + 1; setViewIndex(cur + 1); }
-        else if (g.dx > 40 && cur > 0) { viewIndexRef.current = cur - 1; setViewIndex(cur - 1); }
+        if (g.dx < -40 && cur < 3) {
+          if (!premiumRef.current) { setUpgradeVisible(true); return; }
+          viewIndexRef.current = cur + 1; setViewIndex(cur + 1);
+        } else if (g.dx > 40 && cur > 0) { viewIndexRef.current = cur - 1; setViewIndex(cur - 1); }
       },
     })
   ).current;
@@ -187,8 +201,29 @@ export default function App() {
     AsyncStorage.setItem("mainTitle_v1", trimmed);
   };
 
+  // Keep premiumRef in sync so PanResponder closure reads fresh value
+  useEffect(() => { premiumRef.current = PREMIUM; }, [PREMIUM]);
+
   useEffect(() => {
+    if (Platform.OS === "web") {
+      // Web: fall back to local cache
+      AsyncStorage.getItem("premium_v1").then(v => { if (v === "1") setPremium(true); });
+      return;
+    }
+    Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+    Purchases.configure({ apiKey: RC_API_KEY_ANDROID });
+    // Show cached value instantly, then verify with server
     AsyncStorage.getItem("premium_v1").then(v => { if (v === "1") setPremium(true); });
+    Purchases.getCustomerInfo()
+      .then(info => {
+        const active = !!info.entitlements.active[RC_ENTITLEMENT];
+        setPremium(active);
+        AsyncStorage.setItem("premium_v1", active ? "1" : "0");
+      })
+      .catch(() => { /* keep cached value on network error */ });
+    Purchases.getOfferings()
+      .then(o => { if (o.current) setOfferings(o.current); })
+      .catch(() => { /* ignore */ });
   }, []);
 
   useEffect(() => {
@@ -400,6 +435,49 @@ export default function App() {
     setNewLabel("");
     setNewEmoji(EMOJI_LIST[0]);
     setNewColorIdx(0);
+  };
+
+  const purchasePremium = async () => {
+    if (Platform.OS === "web") { Alert.alert("Not available", "In-app purchases are not supported on web."); return; }
+    try {
+      let pkgs = offerings?.availablePackages;
+      if (!pkgs?.length) {
+        // Try a fresh fetch if offerings haven't loaded yet
+        const o = await Purchases.getOfferings();
+        if (o.current) { setOfferings(o.current); pkgs = o.current.availablePackages; }
+      }
+      if (!pkgs?.length) {
+        Alert.alert("Unavailable", "No subscription packages found. Make sure you have an active Google Play connection and the product is published in Play Console.");
+        return;
+      }
+      const pkg: PurchasesPackage = pkgs[0];
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+      if (customerInfo.entitlements.active[RC_ENTITLEMENT]) {
+        setPremium(true);
+        AsyncStorage.setItem("premium_v1", "1");
+        setUpgradeVisible(false);
+        Alert.alert("Premium Unlocked! 🎉", "Thank you for subscribing! Week, month and year views are now available.");
+      }
+    } catch (e: any) {
+      if (!e.userCancelled) Alert.alert("Purchase failed", e.message ?? "Something went wrong. Please try again.");
+    }
+  };
+
+  const restorePurchases = async () => {
+    if (Platform.OS === "web") return;
+    try {
+      const info = await Purchases.restorePurchases();
+      if (info.entitlements.active[RC_ENTITLEMENT]) {
+        setPremium(true);
+        AsyncStorage.setItem("premium_v1", "1");
+        setUpgradeVisible(false);
+        Alert.alert("Restored!", "Your premium subscription has been restored.");
+      } else {
+        Alert.alert("No subscription found", "We couldn't find an active subscription linked to this account.");
+      }
+    } catch (e: any) {
+      Alert.alert("Restore failed", e.message ?? "Something went wrong.");
+    }
   };
 
   const resetFromEdit = () => {
@@ -916,6 +994,37 @@ export default function App() {
                 <Text style={styles.modalSaveText}>Add</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Upgrade to Premium modal */}
+      <Modal visible={upgradeVisible} transparent animationType="fade" onRequestClose={() => setUpgradeVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Go Premium ✨</Text>
+            <Text style={[styles.helpItemDesc, { textAlign: "center", marginBottom: 12 }]}>
+              Unlock week, month &amp; year tracking history and custom activity circles.
+            </Text>
+            {offerings?.availablePackages?.[0]?.product && (
+              <Text style={[styles.helpItemTitle, { textAlign: "center", marginBottom: 16 }]}>
+                {offerings.availablePackages[0].product.priceString} / month
+              </Text>
+            )}
+            <View style={{ alignItems: "center", marginBottom: 10 }}>
+              <TouchableOpacity
+                style={[styles.modalSave, { flex: 0, backgroundColor: C.purpleDark, width: 200, borderRadius: 24, height: 48 }]}
+                onPress={purchasePremium}
+              >
+                <Text style={[styles.modalSaveText, { color: C.text, fontSize: 15 }]}>Subscribe</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={restorePurchases} style={{ alignItems: "center", marginBottom: 10 }}>
+              <Text style={[styles.helpItemDesc, { color: C.accent }]}>Restore purchase</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setUpgradeVisible(false)} style={{ alignItems: "center" }}>
+              <Text style={[styles.helpItemDesc, { color: C.muted }]}>Not now</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
