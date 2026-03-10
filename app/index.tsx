@@ -920,7 +920,7 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>How to use</Text>
-            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.helpContent} style={{ maxHeight: height - 320 }}>
+            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={styles.helpContent} style={{ maxHeight: height * 0.5 }}>
               {([
                 ["Tap a circle", "Start or stop tracking time for that activity."],
                 ["Hold a circle", "Edit its name, emoji and colour, or reset its timer."],
@@ -989,7 +989,7 @@ const styles = StyleSheet.create({
   modalCancel: { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: C.bg, alignItems: "center", borderWidth: 1, borderColor: C.rim },
   modalCancelText: { fontFamily: "DMMono_400Regular", color: C.muted, fontSize: 14 },
   modalSave: { flex: 1, paddingVertical: 13, borderRadius: 14, alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
-  modalSaveText: { fontFamily: "DMMono_500Medium", color: C.bg, fontSize: 15, fontWeight: "700" as any },
+  modalSaveText: { fontFamily: "DMMono_500Medium", color: "#000", fontSize: 15, fontWeight: "700" as any },
   viewDots: { flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 6, marginBottom: 2 },
   viewDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.rim },
   viewDotActive: { backgroundColor: C.accent },
