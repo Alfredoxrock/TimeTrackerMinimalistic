@@ -944,7 +944,7 @@ export default function App() {
                 onPress={() => setHelpVisible(false)}
                 accessibilityLabel="Close help"
               >
-                <Text style={[styles.modalSaveText, { color: C.text, fontSize: 14 }]}>CLOSE</Text>
+                <Text style={[styles.modalSaveText, { color: C.text, fontSize: 14 }]}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
