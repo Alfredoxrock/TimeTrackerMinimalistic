@@ -50,3 +50,8 @@ app-example
 /build
 /ios
 /android
+
+# Sensitive keys
+/keys/*.json
+/keys/*.pem
+/keys/*.key
