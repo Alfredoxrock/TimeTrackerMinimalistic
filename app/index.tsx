@@ -23,10 +23,10 @@ const { width, height } = Dimensions.get("window");
 
 // ─── RevenueCat config ─────────────────────────────────────────────────────
 // 1. Create a free account at https://app.revenuecat.com
-// 2. Add your app (Android) and create a "premium" entitlement + product
+// 2. Add your app (Android) and create an entitlement (example: `pro`) + product (example id: `pro_yearly`)
 // 3. Paste the Google API key from RevenueCat → Project settings → API keys
 const RC_API_KEY_ANDROID = "PASTE_YOUR_REVENUECAT_ANDROID_API_KEY_HERE";
-const RC_ENTITLEMENT = "premium";
+const RC_ENTITLEMENT = "pro";
 
 //  Color system 
 const C = {
