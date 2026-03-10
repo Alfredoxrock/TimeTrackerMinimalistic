@@ -937,9 +937,12 @@ export default function App() {
                 </View>
               ))}
             </ScrollView>
-            <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.success, marginTop: 8 }]} onPress={() => setHelpVisible(false)}>
-              <Text style={styles.modalSaveText}>CLOSE</Text>
-            </TouchableOpacity>
+            <View style={{ alignItems: "center", marginTop: 8 }}>
+              <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.success }]} onPress={() => setHelpVisible(false)} accessibilityLabel="Close help">
+                <Text style={styles.modalSaveText}>CLOSE</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalCloseLabel}>Close</Text>
+            </View>
           </View>
         </View>
       </Modal>
@@ -977,6 +980,7 @@ const styles = StyleSheet.create({
   helpItem: { marginBottom: 12 },
   helpItemTitle: { fontFamily: "DMMono_500Medium", fontSize: 13, color: C.accent, marginBottom: 4 },
   helpItemDesc: { fontFamily: "DMMono_400Regular", fontSize: 13, color: C.muted, lineHeight: 18 },
+  modalCloseLabel: { fontFamily: "DMMono_400Regular", fontSize: 12, color: C.text, marginTop: 6 },
   modalTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
   emojiScroll: { marginBottom: 14 },
   emojiBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 6 },
