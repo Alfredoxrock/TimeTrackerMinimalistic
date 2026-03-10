@@ -939,7 +939,7 @@ export default function App() {
             </ScrollView>
             <View style={{ alignItems: "center", marginTop: 8 }}>
               <TouchableOpacity
-                style={[styles.modalSave, { backgroundColor: C.accent, width: 160, paddingHorizontal: 20, height: 96 }]}
+                style={[styles.modalSave, { flex: 0, backgroundColor: C.accent, width: 160, paddingHorizontal: 20, height: 96 }]}
                 onPress={() => setHelpVisible(false)}
                 accessibilityLabel="Close help"
               >
