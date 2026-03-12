@@ -55,3 +55,6 @@ app-example
 /keys/*.json
 /keys/*.pem
 /keys/*.key
+# local secret modules
+/keys/*.ts
+/keys/*.js
