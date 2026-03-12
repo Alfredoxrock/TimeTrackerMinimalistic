@@ -28,6 +28,48 @@ const { width, height } = Dimensions.get("window");
 const RC_API_KEY_ANDROID = "test_RKOCgAKaojsylOYUKCorurLcWTG";
 const RC_ENTITLEMENT = "pro";
 
+const PLANS = [
+  { label: "Monthly", price: "$1.99", sub: "per month", pkgType: "MONTHLY", best: false },
+  { label: "6 Months", price: "$5.99", sub: "every 6 months", pkgType: "SIX_MONTH", best: false },
+  { label: "Yearly", price: "$9.99", sub: "per year  •  Save 58%", pkgType: "ANNUAL", best: true },
+];
+
+// Map some common package types to ISO subscription periods used by store products
+const PKGTYPE_TO_ISO: Record<string, string> = {
+  MONTHLY: "P1M",
+  ANNUAL: "P1Y",
+  SIX_MONTH: "P6M",
+};
+
+const findPackageForPlan = (pkgs: any[] | undefined, planIdx: number) => {
+  if (!pkgs || pkgs.length === 0) return null;
+  const targetType = PLANS[planIdx]?.pkgType;
+  // 1) match by explicit packageType
+  let p = pkgs.find((x: any) => x.packageType === targetType);
+  if (p) return p;
+  // 2) match by product subscriptionPeriod (ISO), e.g. P6M
+  const iso = PKGTYPE_TO_ISO[targetType];
+  if (iso) {
+    p = pkgs.find((x: any) => x.product && (x.product.subscriptionPeriod === iso || x.product.subscriptionPeriodString === iso));
+    if (p) return p;
+  }
+  // 3) match by identifier fields
+  p = pkgs.find((x: any) => x.identifier === targetType || (x.product && (x.product.productId === targetType || x.product.identifier === targetType)));
+  if (p) return p;
+  // 4) fallback: return first CUSTOM with matching ISO-like period
+  if (iso) {
+    p = pkgs.find((x: any) => x.packageType === "CUSTOM" && x.product && (x.product.subscriptionPeriod === iso || x.product.subscriptionPeriodString === iso));
+    if (p) return p;
+  }
+  return pkgs[0];
+};
+
+const displayPriceForPlan = (pkgs: any[] | undefined, planIdx: number, fallback: string) => {
+  const pkg = findPackageForPlan(pkgs, planIdx);
+  if (!pkg) return fallback;
+  return pkg.product?.localizedPriceString || pkg.product?.priceString || fallback;
+};
+
 //  Color system 
 const C = {
   bg: "#0a0a0f",
@@ -159,6 +201,8 @@ export default function App() {
   const [PREMIUM, setPremium] = useState(false);
   const premiumRef = useRef(false);
   const [upgradeVisible, setUpgradeVisible] = useState(false);
+  const [selectedPlanIdx, setSelectedPlanIdx] = useState(2); // default: Yearly
+  const [isPurchasing, setIsPurchasing] = useState(false);
   const [offerings, setOfferings] = useState<any>(null);
   const panResponder = useRef(
     PanResponder.create({
@@ -437,9 +481,11 @@ export default function App() {
     setNewColorIdx(0);
   };
 
-  const purchasePremium = async () => {
+  const purchasePremium = async (planIdx = selectedPlanIdx) => {
+    if (isPurchasing) return; // prevent re-entry / loops
     if (Platform.OS === "web") { Alert.alert("Not available", "In-app purchases are not supported on web."); return; }
     try {
+      setIsPurchasing(true);
       let pkgs = offerings?.availablePackages;
       if (!pkgs?.length) {
         // Try a fresh fetch if offerings haven't loaded yet
@@ -450,7 +496,7 @@ export default function App() {
         Alert.alert("Unavailable", "No subscription packages found. Make sure you have an active Google Play connection and the product is published in Play Console.");
         return;
       }
-      const pkg: PurchasesPackage = pkgs[0];
+      const pkg: PurchasesPackage = findPackageForPlan(pkgs, planIdx) ?? pkgs[0];
       const { customerInfo } = await Purchases.purchasePackage(pkg);
       if (customerInfo.entitlements.active[RC_ENTITLEMENT]) {
         setPremium(true);
@@ -459,7 +505,14 @@ export default function App() {
         Alert.alert("Premium Unlocked! 🎉", "Thank you for subscribing! Week, month and year views are now available.");
       }
     } catch (e: any) {
-      if (!e.userCancelled) Alert.alert("Purchase failed", e.message ?? "Something went wrong. Please try again.");
+      console.error("Purchase error:", e);
+      if (!e?.userCancelled) {
+        const msg = e?.message ?? "Something went wrong. Please try again.";
+        const code = e?.code ? ` (${e.code})` : "";
+        Alert.alert("Purchase failed", msg + code);
+      }
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
@@ -563,6 +616,11 @@ export default function App() {
               activeOpacity={1}
             >
               <Text style={styles.mainTitle}>{titleValue}</Text>
+            </TouchableOpacity>
+          )}
+          {!PREMIUM && (
+            <TouchableOpacity onPress={() => setUpgradeVisible(true)} style={[styles.helpBtn, { position: "absolute", left: 14, top: 10 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.helpBtnText, { color: C.accent, fontSize: 11, letterSpacing: 0.5 }]}>PRO</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={() => setHelpVisible(true)} style={[styles.helpBtn, { position: "absolute", right: 14, top: 10 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -1001,30 +1059,68 @@ export default function App() {
       {/* Upgrade to Premium modal */}
       <Modal visible={upgradeVisible} transparent animationType="fade" onRequestClose={() => setUpgradeVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Go Premium ✨</Text>
-            <Text style={[styles.helpItemDesc, { textAlign: "center", marginBottom: 12 }]}>
-              Unlock week, month &amp; year tracking history and custom activity circles.
-            </Text>
-            {offerings?.availablePackages?.[0]?.product && (
-              <Text style={[styles.helpItemTitle, { textAlign: "center", marginBottom: 16 }]}>
-                {offerings.availablePackages[0].product.priceString} / month
-              </Text>
-            )}
-            <View style={{ alignItems: "center", marginBottom: 10 }}>
+          <View style={[styles.modalBox, { maxHeight: height * 0.85 }]}>
+            <Text style={styles.modalTitle}>Unlock PRO ✨</Text>
+
+            {/* Scrollable content */}
+            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 8 }} style={{ flexShrink: 1 }}>
+              {/* Feature list */}
+              <View style={{ marginBottom: 16 }}>
+                {([
+                  ["🎨", "Week colour-coded view", "Each day's sessions shown in colour at a glance."],
+                  ["📅", "Month heat map", "Spot patterns across a full calendar month."],
+                  ["📊", "Year heat map", "Your whole year of activity in one screen."],
+                  ["➕", "Custom activity circles", "Add as many tracking circles as you need."],
+                ] as [string, string, string][]).map(([icon, title, desc], i) => (
+                  <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 10, gap: 10 }}>
+                    <Text style={{ fontSize: 18, marginTop: 1 }}>{icon}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.helpItemTitle}>{title}</Text>
+                      <Text style={[styles.helpItemDesc, { fontSize: 12 }]}>{desc}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* Plan selector */}
+              <View style={{ marginBottom: 8, gap: 8 }}>
+                {PLANS.map((plan, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => setSelectedPlanIdx(i)}
+                    style={[styles.planCard, selectedPlanIdx === i && styles.planCardActive]}
+                  >
+                    {plan.best && (
+                      <View style={styles.planBestBadge}>
+                        <Text style={styles.planBestText}>BEST VALUE</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.helpItemTitle, { marginBottom: 1 }]}>{plan.label}</Text>
+                      <Text style={[styles.helpItemDesc, { fontSize: 11 }]}>{plan.sub}</Text>
+                    </View>
+                    <Text style={{ fontFamily: "DMMono_500Medium", color: C.text, fontSize: 16 }}>{displayPriceForPlan(offerings?.availablePackages, i, plan.price)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {/* Sticky footer buttons */}
+            <View style={{ paddingTop: 12, alignItems: "center", gap: 10 }}>
               <TouchableOpacity
-                style={[styles.modalSave, { flex: 0, backgroundColor: C.purpleDark, width: 200, borderRadius: 24, height: 48 }]}
-                onPress={purchasePremium}
+                style={[styles.modalSave, { flex: 0, backgroundColor: isPurchasing ? "#444" : C.purpleDark, width: 220, borderRadius: 24, height: 48, opacity: isPurchasing ? 0.8 : 1 }]}
+                onPress={() => { if (!isPurchasing) purchasePremium(selectedPlanIdx); }}
+                disabled={isPurchasing}
               >
-                <Text style={[styles.modalSaveText, { color: C.text, fontSize: 15 }]}>Subscribe</Text>
+                <Text style={[styles.modalSaveText, { color: C.text, fontSize: 15 }]}>{isPurchasing ? "Processing..." : "Subscribe"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={restorePurchases}>
+                <Text style={[styles.helpItemDesc, { color: C.accent }]}>Restore purchase</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setUpgradeVisible(false)}>
+                <Text style={[styles.helpItemDesc, { color: C.muted }]}>Not now</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={restorePurchases} style={{ alignItems: "center", marginBottom: 10 }}>
-              <Text style={[styles.helpItemDesc, { color: C.accent }]}>Restore purchase</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setUpgradeVisible(false)} style={{ alignItems: "center" }}>
-              <Text style={[styles.helpItemDesc, { color: C.muted }]}>Not now</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1096,7 +1192,7 @@ const styles = StyleSheet.create({
   helpItem: { marginBottom: 12 },
   helpItemTitle: { fontFamily: "DMMono_500Medium", fontSize: 13, color: C.accent, marginBottom: 4 },
   helpItemDesc: { fontFamily: "DMMono_400Regular", fontSize: 13, color: C.muted, lineHeight: 18 },
-  
+
   modalTitle: { fontFamily: "PlayfairDisplay_700Bold", fontSize: 20, color: C.text, marginBottom: 16, textAlign: "center" },
   emojiScroll: { marginBottom: 14 },
   emojiBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 6 },
@@ -1113,6 +1209,10 @@ const styles = StyleSheet.create({
   modalSaveText: { fontFamily: "DMMono_500Medium", color: "#fff", fontSize: 15, fontWeight: "700" as any },
   viewDots: { flexDirection: "row", gap: 6, justifyContent: "center", marginTop: 6, marginBottom: 2 },
   viewDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.rim },
+  planCard: { flexDirection: "row", alignItems: "center", borderRadius: 12, padding: 12, borderWidth: 1.5, borderColor: C.rim, backgroundColor: C.bg, position: "relative", overflow: "hidden", gap: 10 },
+  planCardActive: { borderColor: C.accent, backgroundColor: "#1a1630" },
+  planBestBadge: { position: "absolute", top: 0, right: 0, backgroundColor: C.purpleDark, paddingHorizontal: 8, paddingVertical: 3, borderBottomLeftRadius: 8 },
+  planBestText: { fontFamily: "DMMono_500Medium", color: C.accent, fontSize: 9, letterSpacing: 0.5 },
   viewDotActive: { backgroundColor: C.accent },
   heatWeek: { width: "100%", padding: 12, alignItems: "center" as const },
   heatMonth: { width: "100%", padding: 8, alignItems: "center" as const },
