@@ -1,6 +1,7 @@
 ﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DMMono_400Regular, DMMono_500Medium, useFonts as useDMMono } from "@expo-google-fonts/dm-mono";
 import { PlayfairDisplay_700Bold, useFonts as usePlayfair } from "@expo-google-fonts/playfair-display";
+import Constants from "expo-constants";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -18,16 +19,23 @@ import {
 } from "react-native";
 import Svg, { Circle, Line as SvgLine, Rect, Text as SvgText } from "react-native-svg";
 import Purchases, { LOG_LEVEL, PurchasesPackage } from "react-native-purchases";
+// Detect Expo Go (appOwnership === 'expo') vs standalone/production build.
+const IS_EXPO_GO = Constants.appOwnership === "expo";
+
 // Key loaded from EAS env (production builds) or local ignored file (local dev).
 // No keys are hardcoded here.
 let RC_API_KEY_ANDROID = process.env.REVENUECAT_ANDROID_API_KEY ?? "";
-if (!RC_API_KEY_ANDROID) {
+let RC_API_KEY_ANDROID_TEST = process.env.REVENUECAT_ANDROID_TEST_API_KEY ?? "";
+if (!RC_API_KEY_ANDROID || !RC_API_KEY_ANDROID_TEST) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { REVENUECAT_ANDROID_API_KEY } = require("../keys/revenuecat");
-    if (REVENUECAT_ANDROID_API_KEY) RC_API_KEY_ANDROID = REVENUECAT_ANDROID_API_KEY;
+    const { REVENUECAT_ANDROID_API_KEY, REVENUECAT_ANDROID_TEST_API_KEY } = require("../keys/revenuecat");
+    if (!RC_API_KEY_ANDROID && REVENUECAT_ANDROID_API_KEY) RC_API_KEY_ANDROID = REVENUECAT_ANDROID_API_KEY;
+    if (!RC_API_KEY_ANDROID_TEST && REVENUECAT_ANDROID_TEST_API_KEY) RC_API_KEY_ANDROID_TEST = REVENUECAT_ANDROID_TEST_API_KEY;
   } catch (e) { /* keys/revenuecat.ts not present */ }
 }
+// Use test key inside Expo Go, production key in standalone builds.
+const RC_KEY = IS_EXPO_GO ? RC_API_KEY_ANDROID_TEST : RC_API_KEY_ANDROID;
 
 const { width, height } = Dimensions.get("window");
 
@@ -260,19 +268,23 @@ export default function App() {
       return;
     }
     Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-    Purchases.configure({ apiKey: RC_API_KEY_ANDROID });
+    if (RC_KEY) {
+      Purchases.configure({ apiKey: RC_KEY });
+    }
     // Show cached value instantly, then verify with server
     AsyncStorage.getItem("premium_v1").then(v => { if (v === "1") setPremium(true); });
-    Purchases.getCustomerInfo()
-      .then(info => {
-        const active = !!info.entitlements.active[RC_ENTITLEMENT];
-        setPremium(active);
-        AsyncStorage.setItem("premium_v1", active ? "1" : "0");
-      })
-      .catch(() => { /* keep cached value on network error */ });
-    Purchases.getOfferings()
-      .then(o => { if (o.current) setOfferings(o.current); })
-      .catch(() => { /* ignore */ });
+    if (RC_KEY) {
+      Purchases.getCustomerInfo()
+        .then(info => {
+          const active = !!info.entitlements.active[RC_ENTITLEMENT];
+          setPremium(active);
+          AsyncStorage.setItem("premium_v1", active ? "1" : "0");
+        })
+        .catch(() => { /* keep cached value on network error */ });
+      Purchases.getOfferings()
+        .then(o => { if (o.current) setOfferings(o.current); })
+        .catch(() => { /* ignore */ });
+    }
   }, []);
 
   useEffect(() => {
