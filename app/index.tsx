@@ -26,6 +26,12 @@ const IS_EXPO_GO = Constants.appOwnership === "expo";
 // No keys are hardcoded here.
 let RC_API_KEY_ANDROID = process.env.REVENUECAT_ANDROID_API_KEY ?? "";
 let RC_API_KEY_ANDROID_TEST = process.env.REVENUECAT_ANDROID_TEST_API_KEY ?? "";
+
+// Prefer expo.extra (injected via EAS secrets/app.config.js) at build time.
+const extra: Record<string, any> = (Constants.expoConfig && (Constants.expoConfig as any).extra) || (Constants.manifest && (Constants.manifest as any).extra) || {};
+if (!RC_API_KEY_ANDROID && extra.REVENUECAT_ANDROID_API_KEY) RC_API_KEY_ANDROID = extra.REVENUECAT_ANDROID_API_KEY;
+if (!RC_API_KEY_ANDROID_TEST && extra.REVENUECAT_ANDROID_TEST_API_KEY) RC_API_KEY_ANDROID_TEST = extra.REVENUECAT_ANDROID_TEST_API_KEY;
+
 if (!RC_API_KEY_ANDROID || !RC_API_KEY_ANDROID_TEST) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -34,8 +40,11 @@ if (!RC_API_KEY_ANDROID || !RC_API_KEY_ANDROID_TEST) {
     if (!RC_API_KEY_ANDROID_TEST && REVENUECAT_ANDROID_TEST_API_KEY) RC_API_KEY_ANDROID_TEST = REVENUECAT_ANDROID_TEST_API_KEY;
   } catch (e) { /* keys/revenuecat.ts not present */ }
 }
+
 // Use test key inside Expo Go, production key in standalone builds.
 const RC_KEY = IS_EXPO_GO ? RC_API_KEY_ANDROID_TEST : RC_API_KEY_ANDROID;
+// Log presence (do not log secret value) to verify build-time injection
+console.log("RC_KEY present:", !!RC_KEY, "(expoGo=", IS_EXPO_GO, ")");
 
 const { width, height } = Dimensions.get("window");
 
@@ -274,16 +283,24 @@ export default function App() {
     // Show cached value instantly, then verify with server
     AsyncStorage.getItem("premium_v1").then(v => { if (v === "1") setPremium(true); });
     if (RC_KEY) {
-      Purchases.getCustomerInfo()
-        .then(info => {
-          const active = !!info.entitlements.active[RC_ENTITLEMENT];
-          setPremium(active);
-          AsyncStorage.setItem("premium_v1", active ? "1" : "0");
-        })
-        .catch(() => { /* keep cached value on network error */ });
-      Purchases.getOfferings()
-        .then(o => { if (o.current) setOfferings(o.current); })
-        .catch(() => { /* ignore */ });
+      // API key verification: run both calls and report success/failure
+      Promise.all([
+        Purchases.getCustomerInfo(),
+        Purchases.getOfferings(),
+      ]).then(([info, offerings]) => {
+        const active = !!info.entitlements.active[RC_ENTITLEMENT];
+        setPremium(active);
+        AsyncStorage.setItem("premium_v1", active ? "1" : "0");
+        if (offerings.current) setOfferings(offerings.current);
+        const pkgCount = offerings.current?.availablePackages?.length ?? 0;
+        console.log(`[RC] API key OK — entitlement active: ${active}, packages: ${pkgCount}`);
+        Alert.alert("RC Key OK ✓", `API key is valid.\nEntitlement active: ${active}\nPackages loaded: ${pkgCount}`);
+      }).catch((e: any) => {
+        console.error("[RC] API key check failed:", e);
+        Alert.alert("RC Key FAILED ✗", `code: ${e?.code ?? "?"}\n${e?.message ?? e}`);
+      });
+    } else {
+      Alert.alert("RC Key FAILED ✗", "RC_KEY is empty — key not injected correctly.");
     }
   }, []);
 
@@ -501,6 +518,7 @@ export default function App() {
   const purchasePremium = async (planIdx = selectedPlanIdx) => {
     if (isPurchasing) return; // prevent re-entry / loops
     if (Platform.OS === "web") { Alert.alert("Not available", "In-app purchases are not supported on web."); return; }
+    if (!RC_KEY) { Alert.alert("Unavailable", "Billing is not configured in this build. Please contact support."); return; }
     try {
       setIsPurchasing(true);
       let pkgs = offerings?.availablePackages;
@@ -523,10 +541,24 @@ export default function App() {
       }
     } catch (e: any) {
       console.error("Purchase error:", e);
+      try {
+        console.error("Purchase error (full):", JSON.stringify(e, Object.getOwnPropertyNames(e), 2));
+      } catch (err) { /* ignore stringify errors */ }
       if (!e?.userCancelled) {
         const msg = e?.message ?? "Something went wrong. Please try again.";
         const code = e?.code ? ` (${e.code})` : "";
-        Alert.alert("Purchase failed", msg + code);
+        Alert.alert("Purchase failed", msg + code, [
+          { text: "OK", style: "cancel" },
+          {
+            text: "Details", onPress: () => {
+              try {
+                Alert.alert("Details", JSON.stringify(e, Object.getOwnPropertyNames(e), 2));
+              } catch (err) {
+                Alert.alert("Details", String(e));
+              }
+            }
+          }
+        ]);
       }
     } finally {
       setIsPurchasing(false);
@@ -535,6 +567,7 @@ export default function App() {
 
   const restorePurchases = async () => {
     if (Platform.OS === "web") return;
+    if (!RC_KEY) { Alert.alert("Unavailable", "Billing is not configured in this build."); return; }
     try {
       const info = await Purchases.restorePurchases();
       if (info.entitlements.active[RC_ENTITLEMENT]) {
