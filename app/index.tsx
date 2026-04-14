@@ -255,6 +255,11 @@ export default function App() {
   // Help modal state
   const [helpVisible, setHelpVisible] = useState(false);
 
+  // Serial code modal state
+  const [serialModalVisible, setSerialModalVisible] = useState(false);
+  const [serialCodeInput, setSerialCodeInput] = useState("");
+  const [serialCodeError, setSerialCodeError] = useState("");
+
   // Title edit state
   const [titleValue, setTitleValue] = useState("Day Circles");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -283,7 +288,6 @@ export default function App() {
     // Show cached value instantly, then verify with server
     AsyncStorage.getItem("premium_v1").then(v => { if (v === "1") setPremium(true); });
     if (RC_KEY) {
-      // API key verification: run both calls and report success/failure
       Promise.all([
         Purchases.getCustomerInfo(),
         Purchases.getOfferings(),
@@ -293,14 +297,12 @@ export default function App() {
         AsyncStorage.setItem("premium_v1", active ? "1" : "0");
         if (offerings.current) setOfferings(offerings.current);
         const pkgCount = offerings.current?.availablePackages?.length ?? 0;
-        console.log(`[RC] API key OK — entitlement active: ${active}, packages: ${pkgCount}`);
-        Alert.alert("RC Key OK ✓", `API key is valid.\nEntitlement active: ${active}\nPackages loaded: ${pkgCount}`);
+        console.log(`[RC] entitlement active: ${active}, packages: ${pkgCount}`);
       }).catch((e: any) => {
-        console.error("[RC] API key check failed:", e);
-        Alert.alert("RC Key FAILED ✗", `code: ${e?.code ?? "?"}\n${e?.message ?? e}`);
+        console.error("[RC] init failed:", e);
       });
     } else {
-      Alert.alert("RC Key FAILED ✗", "RC_KEY is empty — key not injected correctly.");
+      console.warn("[RC] RC_KEY is empty — billing not configured.");
     }
   }, []);
 
@@ -504,6 +506,20 @@ export default function App() {
     setEditId(null);
   };
 
+  const SERIAL_CODE = "ASD1-CM20-CA00-DK12";
+  const redeemSerialCode = () => {
+    if (serialCodeInput.trim().toUpperCase() === SERIAL_CODE) {
+      setPremium(true);
+      AsyncStorage.setItem("premium_v1", "1");
+      setSerialModalVisible(false);
+      setSerialCodeInput("");
+      setSerialCodeError("");
+      Alert.alert("Premium Unlocked! 🎉", "Your serial code was accepted. Enjoy PRO features!");
+    } else {
+      setSerialCodeError("Invalid serial code. Please check and try again.");
+    }
+  };
+
   const addCircle = () => {
     if (!newLabel.trim()) return;
     const id = `task_${Date.now()}`;
@@ -538,6 +554,15 @@ export default function App() {
         AsyncStorage.setItem("premium_v1", "1");
         setUpgradeVisible(false);
         Alert.alert("Premium Unlocked! 🎉", "Thank you for subscribing! Week, month and year views are now available.");
+      } else {
+        Alert.alert(
+          "Payment received",
+          "Your payment was processed but the subscription isn't active yet. Please wait a moment and try restoring your purchase, or contact support if the issue persists.",
+          [
+            { text: "Restore now", onPress: restorePurchases },
+            { text: "OK", style: "cancel" },
+          ]
+        );
       }
     } catch (e: any) {
       console.error("Purchase error:", e);
@@ -692,12 +717,12 @@ export default function App() {
 
             <TouchableOpacity
               activeOpacity={1}
-              delayLongPress={10000}
+              delayLongPress={800}
               onLongPress={() => {
                 if (!PREMIUM) {
-                  setPremium(true);
-                  AsyncStorage.setItem("premium_v1", "1");
-                  Alert.alert("Premium Unlocked", "You now have access to week, month, and year tracking.");
+                  setSerialCodeInput("");
+                  setSerialCodeError("");
+                  setSerialModalVisible(true);
                 }
               }}
               style={{ alignItems: "center", justifyContent: "center" }}
@@ -1169,6 +1194,39 @@ export default function App() {
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setUpgradeVisible(false)}>
                 <Text style={[styles.helpItemDesc, { color: C.muted }]}>Not now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Serial code modal */}
+      <Modal visible={serialModalVisible} transparent animationType="fade" onRequestClose={() => setSerialModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Enter Serial Code</Text>
+            <Text style={[styles.helpItemDesc, { marginBottom: 14, textAlign: "center" }]}>
+              Enter your PRO serial code to unlock premium features.
+            </Text>
+            <TextInput
+              style={[styles.modalInput, { textAlign: "center", letterSpacing: 2 }]}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+              placeholderTextColor={C.muted}
+              value={serialCodeInput}
+              onChangeText={v => { setSerialCodeInput(v); setSerialCodeError(""); }}
+              autoCapitalize="characters"
+              maxLength={19}
+              autoFocus
+            />
+            {!!serialCodeError && (
+              <Text style={{ color: C.pulse, fontSize: 12, textAlign: "center", marginTop: 6 }}>{serialCodeError}</Text>
+            )}
+            <View style={[styles.modalBtns, { marginTop: 16 }]}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => { setSerialModalVisible(false); setSerialCodeInput(""); setSerialCodeError(""); }}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalSave, { backgroundColor: C.purpleDark }]} onPress={redeemSerialCode}>
+                <Text style={styles.modalSaveText}>Redeem</Text>
               </TouchableOpacity>
             </View>
           </View>
