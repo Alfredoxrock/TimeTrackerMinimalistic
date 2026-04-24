@@ -29,6 +29,7 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/withBillingPermission",
       [
         "expo-splash-screen",
         {
